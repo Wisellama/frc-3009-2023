@@ -1,2 +1,3 @@
-# frc-3009-2023
-Code for FRC team 3009 for the 2023 season
+# FRC Team 3009's code for the 2023 Season
+
+This is a C++ project based on the mecanumbot example.
