@@ -44,12 +44,36 @@ public:
     // Initialize the gyro/imu
     m_imu.Calibrate();
 
+    std::vector<rev::CANSparkMax*> motors = {
+      &m_frontRight,
+      &m_frontRightFollow,
+      &m_frontRightFollow,
+      &m_frontLeft,
+      &m_frontLeftFollow,
+      &m_rearRight,
+      &m_rearRightFollow,
+      &m_rearLeft,
+      &m_rearLeftFollow,
+      &m_armMotor,
+    };
+
     // Initialize the motors (CTRE Victor/Talon)
     if (TEST_ROBOT) {
       m_frontRightCtre.ConfigFactoryDefault();
       m_frontLeftCtre.ConfigFactoryDefault();
       m_rearRightCtre.ConfigFactoryDefault();
       m_rearLeftCtre.ConfigFactoryDefault();
+    } else {
+      for (rev::CANSparkMax* motor : motors) {
+        motor->RestoreFactoryDefaults();
+        motor->SetIdleMode(rev::CANSparkMax::IdleMode::kBrake);
+      }
+
+      // Set secondary motor controllers to follow their pairs
+      m_frontLeftFollow.Follow(m_frontLeft);
+      m_frontRightFollow.Follow(m_frontRight);
+      m_rearLeftFollow.Follow(m_rearLeft);
+      m_rearRightFollow.Follow(m_rearRight);
     }
 
     // Invert the right side motors.
@@ -67,7 +91,6 @@ public:
       m_robotDriveCtre.SetMaxOutput(maxOutput);
     } else {
       m_robotDrive.SetMaxOutput(maxOutput);
-      m_robotDrive
     }
 
     // The DriveCartesian class already has a deadzone adjustment thing.
@@ -151,13 +174,17 @@ public:
   }
 
 private:
-  static constexpr int kFrontLeftChannel = 25; // 5
-  static constexpr int kRearLeftChannel = 24; // 4
-  static constexpr int kFrontRightChannel = 23; // 3
-  static constexpr int kRearRightChannel = 22; // 2
+  static constexpr int kFrontLeftChannel = 25;
+  static constexpr int kFrontLeftFollowChannel = 5;
+  static constexpr int kRearLeftChannel = 24;
+  static constexpr int kRearLeftFollowChannel = 4;
+  static constexpr int kFrontRightChannel = 23;
+  static constexpr int kFrontRightFollowChannel = 3;
+  static constexpr int kRearRightChannel = 22;
+  static constexpr int kRearRightFollowChannel = 2;
   static constexpr int kArmChannel = 9;
-  // Pnuematics is 50
-  // PDP is 51
+  // Pnuematics is CAN id 50
+  // PDP is CAN id 51
 
   //static constexpr int kJoystickChannel = 0;
   static constexpr int kXboxPort = 0;
@@ -185,9 +212,14 @@ private:
 
   // These SparkMax controllers on the real robot
   rev::CANSparkMax m_frontLeft{kFrontLeftChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_frontLeftFollow{kFrontLeftFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_frontRight{kFrontRightChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_frontRightFollow{kFrontRightFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_rearLeft{kRearLeftChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_rearLeftFollow{kRearLeftFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_rearRight{kRearRightChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_rearRightFollow{kRearRightFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_armMotor{kArmChannel, rev::CANSparkMax::MotorType::kBrushless};
   frc::MecanumDrive m_robotDrive{m_frontLeft, m_rearLeft, m_frontRight, m_rearRight};
 
   frc::LinearFilter<double> m_accelerationXFilter = frc::LinearFilter<double>::MovingAverage(10);
