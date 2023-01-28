@@ -5,15 +5,12 @@
 #include <frc/Joystick.h>
 #include <frc/TimedRobot.h>
 #include <frc/drive/MecanumDrive.h>
-#include <ctre/phoenix/motorcontrol/can/WPI_TalonSRX.h>
-#include <ctre/phoenix/motorcontrol/can/WPI_VictorSPX.h>
 #include <frc/XboxController.h>
 #include <frc/ADIS16448_IMU.h>
 #include <frc/TimedRobot.h>
 #include <frc/BuiltInAccelerometer.h>
 #include <frc/AnalogPotentiometer.h>
-
-#include <photonlib/PhotonCamera.h>
+#include <frc/filter/LinearFilter.h>
 
 #include <networktables/NetworkTable.h>
 #include <networktables/NetworkTableInstance.h>
@@ -21,7 +18,16 @@
 #include <networktables/NetworkTableValue.h>
 #include <networktables/DoubleTopic.h>
 
-#include <frc/filter/LinearFilter.h>
+#include <photonlib/PhotonCamera.h>
+
+#include <ctre/phoenix/motorcontrol/can/WPI_TalonSRX.h>
+#include <ctre/phoenix/motorcontrol/can/WPI_VictorSPX.h>
+
+#include <rev/CANSparkMax.h>
+
+// False = test robot with CTRE Victor/Talons
+// True = real robot with REV Spark Maxs
+constexpr bool TEST_ROBOT = false;
 
 class Robot : public frc::TimedRobot {
 public:
@@ -38,19 +44,31 @@ public:
     // Initialize the gyro/imu
     m_imu.Calibrate();
 
-    // Initialize the motors
-    m_frontRight.ConfigFactoryDefault();
-    m_frontLeft.ConfigFactoryDefault();
-    m_rearRight.ConfigFactoryDefault();
-    m_rearLeft.ConfigFactoryDefault();
+    // Initialize the motors (CTRE Victor/Talon)
+    if (TEST_ROBOT) {
+      m_frontRightCtre.ConfigFactoryDefault();
+      m_frontLeftCtre.ConfigFactoryDefault();
+      m_rearRightCtre.ConfigFactoryDefault();
+      m_rearLeftCtre.ConfigFactoryDefault();
+    }
 
     // Invert the right side motors.
-    m_frontRight.SetInverted(true);
-    m_rearRight.SetInverted(true);
+    if (TEST_ROBOT) {
+      m_frontRightCtre.SetInverted(true);
+      m_rearRightCtre.SetInverted(true);
+    } else {
+      m_frontRight.SetInverted(true);
+      m_rearRight.SetInverted(true);
+    }
 
     // Limit the motor max speed
     double maxOutput = 0.5;
-    m_robotDrive.SetMaxOutput(maxOutput);
+    if (TEST_ROBOT) {
+      m_robotDriveCtre.SetMaxOutput(maxOutput);
+    } else {
+      m_robotDrive.SetMaxOutput(maxOutput);
+      m_robotDrive
+    }
 
     // The DriveCartesian class already has a deadzone adjustment thing.
     // It defaults to 0.02, we can bump up if needed.
@@ -80,7 +98,7 @@ public:
     distance = distance * kSonicScale; // convert to meters
 
     if (distance < kSonicLimitLower) {
-      distance = -1.0; // Below lower limit of the sensor
+      distance = -1.0; // Below lower limit of the sensor, value isn't useful
     }
 
     publishDistance.Set(distance);
@@ -98,7 +116,11 @@ public:
     double z = m_xbox.GetRightX();
     units::degree_t a = m_imu.GetAngle();
 
-    m_robotDrive.DriveCartesian(y, x, z, a);
+    if (TEST_ROBOT) {
+      m_robotDriveCtre.DriveCartesian(y, x, z);
+    } else {
+      m_robotDrive.DriveCartesian(y, x, z);
+    }
   }
 
   void TeleopExit() override {
@@ -129,10 +151,13 @@ public:
   }
 
 private:
-  static constexpr int kFrontLeftChannel = 5;
-  static constexpr int kRearLeftChannel = 4;
-  static constexpr int kFrontRightChannel = 3;
-  static constexpr int kRearRightChannel = 2;
+  static constexpr int kFrontLeftChannel = 25; // 5
+  static constexpr int kRearLeftChannel = 24; // 4
+  static constexpr int kFrontRightChannel = 23; // 3
+  static constexpr int kRearRightChannel = 22; // 2
+  static constexpr int kArmChannel = 9;
+  // Pnuematics is 50
+  // PDP is 51
 
   //static constexpr int kJoystickChannel = 0;
   static constexpr int kXboxPort = 0;
@@ -151,10 +176,18 @@ private:
   static constexpr double kSonicLimitLower = 300.0;
   static constexpr int kSonicPort = 3;
 
-  ctre::phoenix::motorcontrol::can::WPI_TalonSRX m_frontLeft{kFrontLeftChannel};
-  ctre::phoenix::motorcontrol::can::WPI_VictorSPX m_rearLeft{kRearLeftChannel};
-  ctre::phoenix::motorcontrol::can::WPI_TalonSRX m_frontRight{kFrontRightChannel};
-  ctre::phoenix::motorcontrol::can::WPI_VictorSPX m_rearRight{kRearRightChannel};
+  // These CTRE controllers are on the test robot
+  ctre::phoenix::motorcontrol::can::WPI_TalonSRX m_frontLeftCtre{kFrontLeftChannel};
+  ctre::phoenix::motorcontrol::can::WPI_VictorSPX m_rearLeftCtre{kRearLeftChannel};
+  ctre::phoenix::motorcontrol::can::WPI_TalonSRX m_frontRightCtre{kFrontRightChannel};
+  ctre::phoenix::motorcontrol::can::WPI_VictorSPX m_rearRightCtre{kRearRightChannel};
+  frc::MecanumDrive m_robotDriveCtre{m_frontLeftCtre, m_rearLeftCtre, m_frontRightCtre, m_rearRightCtre};
+
+  // These SparkMax controllers on the real robot
+  rev::CANSparkMax m_frontLeft{kFrontLeftChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_frontRight{kFrontRightChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_rearLeft{kRearLeftChannel, rev::CANSparkMax::MotorType::kBrushless};
+  rev::CANSparkMax m_rearRight{kRearRightChannel, rev::CANSparkMax::MotorType::kBrushless};
   frc::MecanumDrive m_robotDrive{m_frontLeft, m_rearLeft, m_frontRight, m_rearRight};
 
   frc::LinearFilter<double> m_accelerationXFilter = frc::LinearFilter<double>::MovingAverage(10);
