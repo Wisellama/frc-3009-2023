@@ -11,23 +11,21 @@
 #include <frc/BuiltInAccelerometer.h>
 #include <frc/AnalogPotentiometer.h>
 #include <frc/filter/LinearFilter.h>
+#include <frc/Compressor.h>
+#include <frc/DoubleSolenoid.h>
+#include <frc/controller/ArmFeedforward.h>
 
+#include <networktables/DoubleTopic.h>
 #include <networktables/NetworkTable.h>
 #include <networktables/NetworkTableInstance.h>
 #include <networktables/NetworkTableEntry.h>
 #include <networktables/NetworkTableValue.h>
-#include <networktables/DoubleTopic.h>
-
-#include <photonlib/PhotonCamera.h>
-
-#include <ctre/phoenix/motorcontrol/can/WPI_TalonSRX.h>
-#include <ctre/phoenix/motorcontrol/can/WPI_VictorSPX.h>
 
 #include <rev/CANSparkMax.h>
 
-// False = test robot with CTRE Victor/Talons
-// True = real robot with REV Spark Maxs
-constexpr bool TEST_ROBOT = false;
+#include <ctre/phoenix/motorcontrol/can/TalonSRX.h>
+
+#include "CameraAimer.h"
 
 class Robot : public frc::TimedRobot {
 public:
@@ -36,15 +34,16 @@ public:
   nt::DoublePublisher accelerationZ;
   nt::DoublePublisher publishDistance;
   nt::DoublePublisher publishDistanceRaw;
+  nt::DoublePublisher publishCompressorCurrent;
 
   // Destructor
   ~Robot() noexcept override {};
 
   void RobotInit() override {
     // Initialize the gyro/imu
-    m_imu.Calibrate();
+    //m_imu.Calibrate();
 
-    std::vector<rev::CANSparkMax*> motors = {
+    std::vector<rev::CANSparkMax*> sparkMotors = {
       &m_frontRight,
       &m_frontRightFollow,
       &m_frontRightFollow,
@@ -57,47 +56,37 @@ public:
       &m_armMotor,
     };
 
-    // Initialize the motors (CTRE Victor/Talon)
-    if (TEST_ROBOT) {
-      m_frontRightCtre.ConfigFactoryDefault();
-      m_frontLeftCtre.ConfigFactoryDefault();
-      m_rearRightCtre.ConfigFactoryDefault();
-      m_rearLeftCtre.ConfigFactoryDefault();
-    } else {
-      for (rev::CANSparkMax* motor : motors) {
-        motor->RestoreFactoryDefaults();
-        motor->SetIdleMode(rev::CANSparkMax::IdleMode::kBrake);
-      }
-
-      // Set secondary motor controllers to follow their pairs
-      m_frontLeftFollow.Follow(m_frontLeft);
-      m_frontRightFollow.Follow(m_frontRight);
-      m_rearLeftFollow.Follow(m_rearLeft);
-      m_rearRightFollow.Follow(m_rearRight);
+    // Set all motors into Brake mode so that they try to hold themselves in-position when no input is given.
+    for (rev::CANSparkMax* motor : sparkMotors) {
+      motor->RestoreFactoryDefaults();
+      motor->SetIdleMode(rev::CANSparkMax::IdleMode::kBrake);
     }
+    m_wristMotor.SetNeutralMode(ctre::phoenix::motorcontrol::NeutralMode::Brake);
+
+    // Set secondary motor controllers to follow their pairs
+    m_frontLeftFollow.Follow(m_frontLeft);
+    m_frontRightFollow.Follow(m_frontRight);
+    m_rearLeftFollow.Follow(m_rearLeft);
+    m_rearRightFollow.Follow(m_rearRight);
 
     // Invert the right side motors.
-    if (TEST_ROBOT) {
-      m_frontRightCtre.SetInverted(true);
-      m_rearRightCtre.SetInverted(true);
-    } else {
-      m_frontRight.SetInverted(true);
-      m_rearRight.SetInverted(true);
-    }
+    m_frontRight.SetInverted(true);
+    m_frontRightFollow.SetInverted(true);
+    m_rearRight.SetInverted(true);
+    m_rearRightFollow.SetInverted(true);
 
     // Limit the motor max speed
     double maxOutput = 0.5;
-    if (TEST_ROBOT) {
-      m_robotDriveCtre.SetMaxOutput(maxOutput);
-    } else {
-      m_robotDrive.SetMaxOutput(maxOutput);
-    }
+    m_robotDrive.SetMaxOutput(maxOutput);
+    m_robotDrive.SetDeadband(kDeadband);
+
+    // Set default solenoid positions
+    m_solenoidArm.Set(frc::DoubleSolenoid::kReverse);
+    m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
 
     // The DriveCartesian class already has a deadzone adjustment thing.
     // It defaults to 0.02, we can bump up if needed.
     //m_robotDrive.SetDeadband(0.02);
-
-    // robotCamera.SetLEDMode(photonlib::LEDMode::kBlink);
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto table = inst.GetTable("datatable");
@@ -107,10 +96,15 @@ public:
     accelerationZ = table->GetDoubleTopic("accelerationZ").Publish();
     publishDistance = table->GetDoubleTopic("publishDistance").Publish();
     publishDistanceRaw = table->GetDoubleTopic("publishDistanceRaw").Publish();
+    publishCompressorCurrent = table->GetDoubleTopic("publishCompressorCurrent").Publish();
   }
 
   // RobotPeriodic will run regardless of enabled/disabled
   void RobotPeriodic() override {
+    m_compressor.EnableDigital();
+
+    //units::current::ampere_t compressorCurrent = m_compressor.GetCurrent();
+
     accelerationX.Set(m_accelerationXFilter.Calculate(m_accelerometer.GetX()));
     accelerationY.Set(m_accelerationYFilter.Calculate(m_accelerometer.GetY()));
     accelerationZ.Set(m_accelerationZFilter.Calculate(m_accelerometer.GetZ()));
@@ -134,16 +128,69 @@ public:
   }
 
   void TeleopPeriodic() override {
-    double x = m_xbox.GetLeftX();
-    double y = m_xbox.GetLeftY() * -1;
-    double z = m_xbox.GetRightX();
-    units::degree_t a = m_imu.GetAngle();
 
-    if (TEST_ROBOT) {
-      m_robotDriveCtre.DriveCartesian(y, x, z);
+    // Determine values for driving the robot
+    double forward = 0.0;
+    double sideways = 0.0;
+    double rotate = 0.0;
+
+    if (m_xbox.GetBButton()) {
+      // Drive the robot based on camera targeting
+      AutoAimResult result = m_cameraAimer.AutoAim(-1);
+      forward = result.GetForwardSpeed();
+      rotate = result.GetRotationSpeed();
     } else {
-      m_robotDrive.DriveCartesian(y, x, z);
+      // Drive the robot based on controller input
+      double x = m_xbox.GetLeftX();
+      double y = m_xbox.GetLeftY() * -1;
+      double z = m_xbox.GetRightX();
+      //units::degree_t a = m_imu.GetAngle();
+
+      forward = y;
+      sideways = x;
+      rotate = z;
     }
+
+    // TODO disabling all drive while the robot it disassembled
+    // Remove these 3 lines to allow the robot to drive again.
+    forward = 0;
+    sideways = 0;
+    rotate = 0;
+
+    m_robotDrive.DriveCartesian(forward, sideways, rotate);
+
+    // Pnuematics control for arm extend and claw
+    if (m_xbox.GetAButtonPressed()) {
+      m_solenoidClaw.Toggle();
+    } else if (m_xbox.GetYButtonPressed()) {
+      m_solenoidArm.Toggle();
+    }
+
+    // Move the arm using controller triggers
+    double leftTrigger = m_xbox.GetLeftTriggerAxis();
+    double rightTrigger = m_xbox.GetRightTriggerAxis();
+    leftTrigger = std::clamp(leftTrigger, 0.0, 1.0);
+    rightTrigger = std::clamp(rightTrigger, 0.0, 1.0);
+
+    double armSpeed = 0.0;
+    double maxOutput = 0.5;
+
+    if (rightTrigger > 0) {
+      armSpeed = -1 * rightTrigger;
+    } else if (leftTrigger > 0) {
+      armSpeed = leftTrigger;
+    }
+
+    // If you hit the back button (aka select button) it will try using the PIDController to maintain arm position.
+    if (m_xbox.GetBackButton()) {
+      double controllerValue = armSpeed;
+      m_armGoal += controllerValue / 1000; // I'm tamping this down a lot so we don't plow through the ceiling.
+      m_armRotation = m_armController.Calculate(m_armRotation, m_armGoal);
+      armSpeed = m_armRotation;
+    }
+
+    armSpeed = std::clamp(armSpeed, -1 * maxOutput, maxOutput);
+    m_armMotor.Set(armSpeed);
   }
 
   void TeleopExit() override {
@@ -174,6 +221,7 @@ public:
   }
 
 private:
+  // CAN IDs for everything on the CAN network
   static constexpr int kFrontLeftChannel = 25;
   static constexpr int kFrontLeftFollowChannel = 5;
   static constexpr int kRearLeftChannel = 24;
@@ -183,11 +231,14 @@ private:
   static constexpr int kRearRightChannel = 22;
   static constexpr int kRearRightFollowChannel = 2;
   static constexpr int kArmChannel = 9;
-  // Pnuematics is CAN id 50
-  // PDP is CAN id 51
+  static constexpr int kWristChannel = 10;
+  static constexpr int kPnuematics = 50;
+  static constexpr int kPDP = 51;
 
   //static constexpr int kJoystickChannel = 0;
   static constexpr int kXboxPort = 0;
+
+  static constexpr double kDeadband = 0.1;
 
   /*
   The MB1043 UltraSonic datasheet says that the minimum range is around 30cm, and I've tested this to be fairly accurate.
@@ -203,14 +254,7 @@ private:
   static constexpr double kSonicLimitLower = 300.0;
   static constexpr int kSonicPort = 3;
 
-  // These CTRE controllers are on the test robot
-  ctre::phoenix::motorcontrol::can::WPI_TalonSRX m_frontLeftCtre{kFrontLeftChannel};
-  ctre::phoenix::motorcontrol::can::WPI_VictorSPX m_rearLeftCtre{kRearLeftChannel};
-  ctre::phoenix::motorcontrol::can::WPI_TalonSRX m_frontRightCtre{kFrontRightChannel};
-  ctre::phoenix::motorcontrol::can::WPI_VictorSPX m_rearRightCtre{kRearRightChannel};
-  frc::MecanumDrive m_robotDriveCtre{m_frontLeftCtre, m_rearLeftCtre, m_frontRightCtre, m_rearRightCtre};
-
-  // These SparkMax controllers on the real robot
+  // These SparkMax controllers handle the wheels and driving
   rev::CANSparkMax m_frontLeft{kFrontLeftChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_frontLeftFollow{kFrontLeftFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_frontRight{kFrontRightChannel, rev::CANSparkMax::MotorType::kBrushless};
@@ -219,8 +263,13 @@ private:
   rev::CANSparkMax m_rearLeftFollow{kRearLeftFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_rearRight{kRearRightChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_rearRightFollow{kRearRightFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
-  rev::CANSparkMax m_armMotor{kArmChannel, rev::CANSparkMax::MotorType::kBrushless};
   frc::MecanumDrive m_robotDrive{m_frontLeft, m_rearLeft, m_frontRight, m_rearRight};
+
+  // This SparkMax controls the arm up/down rotation
+  rev::CANSparkMax m_armMotor{kArmChannel, rev::CANSparkMax::MotorType::kBrushless};
+
+  // This Talon SRX controls the claw's wrist rotation
+  ctre::phoenix::motorcontrol::can::TalonSRX m_wristMotor{kWristChannel};
 
   frc::LinearFilter<double> m_accelerationXFilter = frc::LinearFilter<double>::MovingAverage(10);
   frc::LinearFilter<double> m_accelerationYFilter = frc::LinearFilter<double>::MovingAverage(10);
@@ -230,13 +279,24 @@ private:
   frc::XboxController m_xbox{kXboxPort};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
-  frc::ADIS16448_IMU m_imu{};
+  //frc::ADIS16448_IMU m_imu{};
 
   frc::BuiltInAccelerometer m_accelerometer{};
 
   frc::AnalogPotentiometer m_ultrasonic{kSonicPort};
 
-  // photonlib::PhotonCamera robotCamera{"photonvision"};
+  CameraAimer m_cameraAimer{};
+
+  frc::Compressor m_compressor{50, frc::PneumaticsModuleType::REVPH};
+  frc::DoubleSolenoid m_solenoidArm{50, frc::PneumaticsModuleType::REVPH, 0, 1}; // Extend/retract the arm
+  frc::DoubleSolenoid m_solenoidClaw{50, frc::PneumaticsModuleType::REVPH, 2, 3}; // Open/close the claw 
+
+  // For smoother arm motion, we're using a PIDController that should allow the motor to keep the arm at a given level
+  const double ARM_P = 4.0;
+  const double ARM_D = 0.75;
+  frc::PIDController m_armController {ARM_P, 0, ARM_D};
+  double m_armRotation = 0.0;
+  double m_armGoal = 0.0;
 };
 
 #ifndef RUNNING_FRC_TESTS
