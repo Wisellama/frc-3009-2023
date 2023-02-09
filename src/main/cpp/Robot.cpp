@@ -83,6 +83,7 @@ public:
     // Set default solenoid positions
     m_solenoidArm.Set(frc::DoubleSolenoid::kReverse);
     m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
+    m_solenoidWheels.Set(frc::DoubleSolenoid::kReverse);
 
     // The DriveCartesian class already has a deadzone adjustment thing.
     // It defaults to 0.02, we can bump up if needed.
@@ -134,7 +135,7 @@ public:
     double sideways = 0.0;
     double rotate = 0.0;
 
-    if (m_xbox.GetBButton()) {
+    if (m_xbox.GetStartButton()) {
       // Drive the robot based on camera targeting
       AutoAimResult result = m_cameraAimer.AutoAim(-1);
       forward = result.GetForwardSpeed();
@@ -151,12 +152,6 @@ public:
       rotate = z;
     }
 
-    // TODO disabling all drive while the robot it disassembled
-    // Remove these 3 lines to allow the robot to drive again.
-    forward = 0;
-    sideways = 0;
-    rotate = 0;
-
     m_robotDrive.DriveCartesian(forward, sideways, rotate);
 
     // Pnuematics control for arm extend and claw
@@ -164,6 +159,8 @@ public:
       m_solenoidClaw.Toggle();
     } else if (m_xbox.GetYButtonPressed()) {
       m_solenoidArm.Toggle();
+    } else if (m_xbox.GetXButtonPressed()) {
+      m_solenoidWheels.Toggle();
     }
 
     // Move the arm using controller triggers
@@ -289,7 +286,8 @@ private:
 
   frc::Compressor m_compressor{50, frc::PneumaticsModuleType::REVPH};
   frc::DoubleSolenoid m_solenoidArm{50, frc::PneumaticsModuleType::REVPH, 0, 1}; // Extend/retract the arm
-  frc::DoubleSolenoid m_solenoidClaw{50, frc::PneumaticsModuleType::REVPH, 2, 3}; // Open/close the claw 
+  frc::DoubleSolenoid m_solenoidClaw{50, frc::PneumaticsModuleType::REVPH, 2, 3}; // Open/close the claw
+  frc::DoubleSolenoid m_solenoidWheels{50, frc::PneumaticsModuleType::REVPH, 4, 5}; // Drop/raise the wheels
 
   // For smoother arm motion, we're using a PIDController that should allow the motor to keep the arm at a given level
   const double ARM_P = 4.0;
