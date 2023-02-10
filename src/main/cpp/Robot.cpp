@@ -170,11 +170,11 @@ public:
     rightTrigger = std::clamp(rightTrigger, 0.0, 1.0);
 
     double armSpeed = 0.0;
-    double maxOutput = 0.5;
+    double maxArmOutput = 0.5;
 
-    if (rightTrigger > 0) {
+    if (rightTrigger > 0.05) {
       armSpeed = -1 * rightTrigger;
-    } else if (leftTrigger > 0) {
+    } else if (leftTrigger > 0.05) {
       armSpeed = leftTrigger;
     }
 
@@ -186,8 +186,21 @@ public:
       armSpeed = m_armRotation;
     }
 
-    armSpeed = std::clamp(armSpeed, -1 * maxOutput, maxOutput);
+    armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armSpeed);
+
+    double wristSpeed = 0.0;
+    double maxWristOutput = 0.15;
+    double currentPOV = m_xbox.GetPOV();
+
+    if (currentPOV == 0) {
+      wristSpeed = 1;
+    } else if (currentPOV == 180) {
+      wristSpeed = -1;
+    };
+
+    wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
+    m_wristMotor.Set(ctre::phoenix::motorcontrol::TalonSRXControlMode::PercentOutput, wristSpeed);
   }
 
   void TeleopExit() override {
@@ -234,6 +247,7 @@ private:
 
   //static constexpr int kJoystickChannel = 0;
   static constexpr int kXboxPort = 0;
+  //TODO setup accessories controller
 
   static constexpr double kDeadband = 0.1;
 
@@ -261,6 +275,7 @@ private:
   rev::CANSparkMax m_rearRight{kRearRightChannel, rev::CANSparkMax::MotorType::kBrushless};
   rev::CANSparkMax m_rearRightFollow{kRearRightFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   frc::MecanumDrive m_robotDrive{m_frontLeft, m_rearLeft, m_frontRight, m_rearRight};
+
 
   // This SparkMax controls the arm up/down rotation
   rev::CANSparkMax m_armMotor{kArmChannel, rev::CANSparkMax::MotorType::kBrushless};
