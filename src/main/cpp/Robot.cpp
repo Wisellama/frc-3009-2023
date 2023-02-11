@@ -5,6 +5,7 @@
 #include <frc/Joystick.h>
 #include <frc/TimedRobot.h>
 #include <frc/drive/MecanumDrive.h>
+#include <frc/drive/DifferentialDrive.h>
 #include <frc/XboxController.h>
 #include <frc/ADIS16448_IMU.h>
 #include <frc/TimedRobot.h>
@@ -22,13 +23,13 @@
 #include <networktables/NetworkTableValue.h>
 
 #include <rev/CANSparkMax.h>
+#include <rev/SparkMaxRelativeEncoder.h>
 
 #include <ctre/phoenix/motorcontrol/can/TalonSRX.h>
 
 #include "CameraAimer.h"
 
 class Robot : public frc::TimedRobot {
-public:
   nt::DoublePublisher accelerationX;
   nt::DoublePublisher accelerationY;
   nt::DoublePublisher accelerationZ;
@@ -36,6 +37,7 @@ public:
   nt::DoublePublisher publishDistanceRaw;
   nt::DoublePublisher publishCompressorCurrent;
 
+public:
   // Destructor
   ~Robot() noexcept override {};
 
@@ -43,25 +45,15 @@ public:
     // Initialize the gyro/imu
     //m_imu.Calibrate();
 
-    std::vector<rev::CANSparkMax*> sparkMotors = {
-      &m_frontRight,
-      &m_frontRightFollow,
-      &m_frontRightFollow,
-      &m_frontLeft,
-      &m_frontLeftFollow,
-      &m_rearRight,
-      &m_rearRightFollow,
-      &m_rearLeft,
-      &m_rearLeftFollow,
-      &m_armMotor,
-    };
-
     // Set all motors into Brake mode so that they try to hold themselves in-position when no input is given.
     for (rev::CANSparkMax* motor : sparkMotors) {
       motor->RestoreFactoryDefaults();
       motor->SetIdleMode(rev::CANSparkMax::IdleMode::kBrake);
+      motor->Set(0);
     }
     m_wristMotor.SetNeutralMode(ctre::phoenix::motorcontrol::NeutralMode::Brake);
+    m_wristMotor.Set(ctre::phoenix::motorcontrol::TalonSRXControlMode::PercentOutput, 0);
+  
 
     // Set secondary motor controllers to follow their pairs
     m_frontLeftFollow.Follow(m_frontLeft);
@@ -78,16 +70,12 @@ public:
     // Limit the motor max speed
     double maxOutput = 0.5;
     m_robotDrive.SetMaxOutput(maxOutput);
-    m_robotDrive.SetDeadband(kDeadband);
+    m_robotDrive.SetDeadband(kDeadband); // I don't trust this to do what it says at all
 
     // Set default solenoid positions
     m_solenoidArm.Set(frc::DoubleSolenoid::kReverse);
-    m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
+    m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
     m_solenoidWheels.Set(frc::DoubleSolenoid::kReverse);
-
-    // The DriveCartesian class already has a deadzone adjustment thing.
-    // It defaults to 0.02, we can bump up if needed.
-    //m_robotDrive.SetDeadband(0.02);
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto table = inst.GetTable("datatable");
@@ -95,9 +83,23 @@ public:
     accelerationX = table->GetDoubleTopic("accelerationX").Publish();
     accelerationY = table->GetDoubleTopic("accelerationY").Publish();
     accelerationZ = table->GetDoubleTopic("accelerationZ").Publish();
-    publishDistance = table->GetDoubleTopic("publishDistance").Publish();
-    publishDistanceRaw = table->GetDoubleTopic("publishDistanceRaw").Publish();
-    publishCompressorCurrent = table->GetDoubleTopic("publishCompressorCurrent").Publish();
+    publishDistance = table->GetDoubleTopic("Distance").Publish();
+    publishDistanceRaw = table->GetDoubleTopic("DistanceRaw").Publish();
+    publishCompressorCurrent = table->GetDoubleTopic("CompressorCurrent").Publish();
+
+    for (auto motor : sparkMotors) {
+      std::stringstream topicName;
+      int id = motor->GetDeviceId();
+      topicName << "MotorDebug" << id;
+      motorDebugPublishers[id] = table->GetStringTopic(topicName.str()).Publish();
+    }
+
+    std::stringstream topicName;
+    int id = m_wristMotor.GetDeviceID();
+    topicName << "MotorDebug" << id;
+    motorDebugPublishers[id] = table->GetStringTopic(topicName.str()).Publish();
+
+    ArmEncoderPublisher = table->GetStringTopic("ArmEncoder").Publish();
   }
 
   // RobotPeriodic will run regardless of enabled/disabled
@@ -121,6 +123,12 @@ public:
 
     publishDistance.Set(distance);
 
+    publishMotorDebugInfo();
+    publishEncoderDebugInfo();
+
+    AutoAimResult ignore = m_cameraAimer.AutoAimAprilTags(-1);
+    AutoAimResult ignore2 = m_cameraAimer.AutoAimReflectiveTape();
+
     // std::shared_ptr<nt::NetworkTable> table = nt::NetworkTableInstance::GetDefault().GetTable("limelight");
     // double targetOffsetAngle_Horizontal = table->GetNumber("tx",0.0);
     // double targetOffsetAngle_Vertical = table->GetNumber("ty",0.0);
@@ -128,6 +136,7 @@ public:
     // double targetSkew = table->GetNumber("ts",0.0);
   }
 
+  // Teleop lasts 2 minutes 15 seconds
   void TeleopPeriodic() override {
 
     // Determine values for driving the robot
@@ -137,8 +146,11 @@ public:
 
     if (m_xbox.GetStartButton()) {
       // Drive the robot based on camera targeting
-      AutoAimResult result = m_cameraAimer.AutoAim(-1);
+      AutoAimResult result = m_cameraAimer.AutoAimAprilTags(-1);
       forward = result.GetForwardSpeed();
+      rotate = result.GetRotationSpeed();
+    } else if (m_xbox.GetBackButton()) {
+      AutoAimResult result = m_cameraAimer.AutoAimReflectiveTape();
       rotate = result.GetRotationSpeed();
     } else {
       // Drive the robot based on controller input
@@ -147,57 +159,76 @@ public:
       double z = m_xbox.GetRightX();
       //units::degree_t a = m_imu.GetAngle();
 
-      forward = y;
-      sideways = x;
-      rotate = z;
+      if (std::abs(x) > kDeadband) {
+        sideways = x;
+      }
+      if (std::abs(y) > kDeadband) {
+        forward = y;
+      }
+      if (std::abs(z) > kDeadband) {
+        rotate = z;
+      }
+    }
+
+    if (m_xbox.GetXButtonPressed()) {
+      m_solenoidWheels.Toggle();
+      m_wheelsdown = !m_wheelsdown;
+    }
+    if (m_wheelsdown){
+      sideways = 0;
     }
 
     m_robotDrive.DriveCartesian(forward, sideways, rotate);
 
     // Pnuematics control for arm extend and claw
-    if (m_xbox.GetAButtonPressed()) {
+    if (m_xbox2.GetAButtonPressed()) {
       m_solenoidClaw.Toggle();
-    } else if (m_xbox.GetYButtonPressed()) {
-      m_solenoidArm.Toggle();
-    } else if (m_xbox.GetXButtonPressed()) {
-      m_solenoidWheels.Toggle();
     }
+    
+    if (m_xbox2.GetYButtonPressed()) {
+      m_solenoidArm.Toggle();
+    }
+    
 
     // Move the arm using controller triggers
-    double leftTrigger = m_xbox.GetLeftTriggerAxis();
-    double rightTrigger = m_xbox.GetRightTriggerAxis();
+    double leftTrigger = m_xbox2.GetLeftTriggerAxis();
+    double rightTrigger = m_xbox2.GetRightTriggerAxis();
     leftTrigger = std::clamp(leftTrigger, 0.0, 1.0);
     rightTrigger = std::clamp(rightTrigger, 0.0, 1.0);
+    leftTrigger = leftTrigger*0.5;
+    rightTrigger = rightTrigger*0.5;
 
     double armSpeed = 0.0;
     double maxArmOutput = 0.5;
 
-    if (rightTrigger > 0.05) {
+    if (rightTrigger > kDeadband) {
       armSpeed = -1 * rightTrigger;
-    } else if (leftTrigger > 0.05) {
+    } else if (leftTrigger > kDeadband) {
       armSpeed = leftTrigger;
     }
 
-    // If you hit the back button (aka select button) it will try using the PIDController to maintain arm position.
-    if (m_xbox.GetBackButton()) {
-      double controllerValue = armSpeed;
-      m_armGoal += controllerValue / 1000; // I'm tamping this down a lot so we don't plow through the ceiling.
-      m_armRotation = m_armController.Calculate(m_armRotation, m_armGoal);
-      armSpeed = m_armRotation;
+    if (m_xbox2.GetStartButton()) {
+      m_useArmPID = !m_useArmPID;
+
+      if (m_useArmPID) {
+        m_armGoal = m_armMotorEncoder.GetPosition();
+      }
     }
 
-    armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
-    m_armMotor.Set(armSpeed);
+    if (m_useArmPID) {
+      // TODO: controls for changing armGoal (And have it clamped)
+      armSpeed = std::clamp(m_armController.Calculate(m_armMotorEncoder.GetPosition(), m_armGoal), -1 * maxArmOutput, maxArmOutput);
+      m_armMotor.Set(armSpeed);
+    } else {
+      armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
+      m_armMotor.Set(armSpeed);
+    }
 
-    double wristSpeed = 0.0;
-    double maxWristOutput = 0.15;
-    double currentPOV = m_xbox.GetPOV();
 
-    if (currentPOV == 0) {
-      wristSpeed = 1;
-    } else if (currentPOV == 180) {
-      wristSpeed = -1;
-    };
+
+    double maxWristOutput = 0.5;
+    double wristSpeed = m_xbox2.GetLeftY();
+
 
     wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
     m_wristMotor.Set(ctre::phoenix::motorcontrol::TalonSRXControlMode::PercentOutput, wristSpeed);
@@ -209,6 +240,7 @@ public:
     // Set the wheel speeds to zero and keep the stabilizer things deployed if we ever add those.
   }
 
+  // Auto lasts 15 seconds
   void AutonomousPeriodic() override {
     // TODO autonomous mode
     /*
@@ -247,9 +279,9 @@ private:
 
   //static constexpr int kJoystickChannel = 0;
   static constexpr int kXboxPort = 0;
-  //TODO setup accessories controller
+  static constexpr int kXboxPort2 = 1;
 
-  static constexpr double kDeadband = 0.1;
+  static constexpr double kDeadband = 0.15;
 
   /*
   The MB1043 UltraSonic datasheet says that the minimum range is around 30cm, and I've tested this to be fairly accurate.
@@ -289,6 +321,7 @@ private:
 
   //frc::Joystick m_stick{kJoystickChannel};
   frc::XboxController m_xbox{kXboxPort};
+  frc::XboxController m_xbox2{kXboxPort2};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
   //frc::ADIS16448_IMU m_imu{};
@@ -305,11 +338,65 @@ private:
   frc::DoubleSolenoid m_solenoidWheels{50, frc::PneumaticsModuleType::REVPH, 4, 5}; // Drop/raise the wheels
 
   // For smoother arm motion, we're using a PIDController that should allow the motor to keep the arm at a given level
-  const double ARM_P = 4.0;
-  const double ARM_D = 0.75;
+  const double ARM_P = 0.1;
+  const double ARM_D = 0.0;
   frc::PIDController m_armController {ARM_P, 0, ARM_D};
   double m_armRotation = 0.0;
   double m_armGoal = 0.0;
+  bool m_useArmPID = false;
+  bool m_wheelsdown = false;
+ 
+
+  // A list of all the spark motors so we can conveniently loop through them.
+  std::vector<rev::CANSparkMax*> sparkMotors = {
+      &m_frontRight,
+      &m_frontRightFollow,
+      &m_frontRightFollow,
+      &m_frontLeft,
+      &m_frontLeftFollow,
+      &m_rearRight,
+      &m_rearRightFollow,
+      &m_rearLeft,
+      &m_rearLeftFollow,
+      &m_armMotor,
+    };
+
+    std::map<int, nt::StringPublisher> motorDebugPublishers;
+    nt::StringPublisher ArmEncoderPublisher;
+
+    void publishMotorDebugInfo() {
+      for(auto motor : sparkMotors) {
+        std::stringstream output;
+        int id = motor->GetDeviceId();
+        output << "ID: " << id << ", ";
+        output << "Get: " << motor->Get() << ", ";
+        output << "AppliedOutput: " << motor->GetAppliedOutput() << ", ";
+        output << "BusVoltage: " << motor->GetBusVoltage() << ", ";
+        output << "OutputCurrent: " << motor->GetOutputCurrent() << ", ";
+        output << "\n";
+        motorDebugPublishers[id].Set(output.str());
+      }
+
+      std::stringstream output;
+      int id = m_wristMotor.GetDeviceID();
+      output << "ID: " << id << ", ";
+      output << "OutputVoltage: " << m_wristMotor.GetMotorOutputVoltage() << ", ";
+      output << "BusVoltage: " << m_wristMotor.GetBusVoltage() << ", ";
+      output << "SupplyCurrent: " << m_wristMotor.GetSupplyCurrent() << ", ";
+      output << "OutputCurrent: " << m_wristMotor.GetOutputCurrent() << ", ";
+      output << "\n";
+      motorDebugPublishers[id].Set(output.str());
+      std::stringstream topicName;
+    }
+
+    rev::SparkMaxRelativeEncoder m_armMotorEncoder = m_armMotor.GetEncoder(rev::SparkMaxRelativeEncoder::Type::kQuadrature);
+
+    void publishEncoderDebugInfo() {
+      std::stringstream output;
+      output << "Position: " << m_armMotorEncoder.GetPosition() << ", ";
+      output << "Velocity: " << m_armMotorEncoder.GetVelocity() << ", ";
+      ArmEncoderPublisher.Set(output.str());
+    }
 };
 
 #ifndef RUNNING_FRC_TESTS

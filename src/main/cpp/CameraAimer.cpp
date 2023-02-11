@@ -5,7 +5,18 @@
 #include "AprilTagPositionEnum.h"
 #include "AprilTagHelpers.h"
 
-AutoAimResult CameraAimer::AutoAim(int targetId) {
+CameraAimer::CameraAimer() {
+  auto inst = nt::NetworkTableInstance::GetDefault();
+  auto table = inst.GetTable("CameraAimer");
+  m_publishFacingBlue = table->GetBooleanTopic("FacingBlue").Publish();
+  m_publishFacingRed = table->GetBooleanTopic("FacingRed").Publish();
+  m_publishBestTargetId = table->GetIntegerTopic("BestTargetId").Publish();
+  m_publishReflectiveYaw = table->GetDoubleTopic("ReflectiveYaw").Publish();
+
+  m_publishReflectiveYaw.Set(99.88);
+}
+
+AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
     // Based on this example:
     // https://github.com/PhotonVision/photonvision/blob/master/photonlib-cpp-examples/aimandrange/src/main/cpp/Robot.cpp
 
@@ -13,7 +24,7 @@ AutoAimResult CameraAimer::AutoAim(int targetId) {
     // Otherwise we'll only track for the exact target we're looking for.
 
     // Query the latest result from PhotonVision
-    const auto& result = m_camera.GetLatestResult();
+    const auto& result = m_cameraAprilTags.GetLatestResult();
 
     double forwardSpeed = 0.0;
     double rotationSpeed = 0.0;
@@ -21,19 +32,16 @@ AutoAimResult CameraAimer::AutoAim(int targetId) {
     if (result.HasTargets()) {
       auto allTargets = result.GetTargets();
       auto bestTarget = result.GetBestTarget();
-      //int fiducialId = bestTarget.GetFiducialId(); // if we want to track a specific AprilTag, look for it in the results list
+      int fiducialId = bestTarget.GetFiducialId(); // if we want to track a specific AprilTag, look for it in the results list
 
       std::vector<int> aprilTagsFound = getAprilTagIds(allTargets);
 
       bool facingBlue = lookingAtBlueCommunity(aprilTagsFound);
       bool facingRed = lookingAtRedCommunity(aprilTagsFound);
 
-      auto inst = nt::NetworkTableInstance::GetDefault();
-      auto table = inst.GetTable("datatable");
       m_publishFacingBlue.Set(facingBlue);
       m_publishFacingRed.Set(facingRed);
-      m_publishFacingBlue = table->GetBooleanTopic("publishFacingBlue").Publish();
-      m_publishFacingRed = table->GetBooleanTopic("publishFacingRed").Publish();
+      m_publishBestTargetId.Set(fiducialId);
 
       // First calculate range
       units::meter_t range = photonlib::PhotonUtils::CalculateDistanceToTarget(
@@ -51,6 +59,19 @@ AutoAimResult CameraAimer::AutoAim(int targetId) {
     }
 
     AutoAimResult output {forwardSpeed, rotationSpeed};
+    return output;
+}
+
+AutoAimResult CameraAimer::AutoAimReflectiveTape() {
+  const auto& result = m_cameraReflectiveTape.GetLatestResult();
+  double rotationSpeed = 0.0;
+
+  if (result.HasTargets()) {
+    m_publishReflectiveYaw.Set(result.GetBestTarget().GetYaw());
+    rotationSpeed = -1 * m_turnControllerReflectiveTape.Calculate(result.GetBestTarget().GetYaw(), 0);
+  }
+
+  AutoAimResult output {0, rotationSpeed};
     return output;
 }
 
