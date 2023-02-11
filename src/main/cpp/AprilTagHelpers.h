@@ -16,5 +16,9 @@ bool lookingAtBlueCommunity(std::vector<int> idsDetected);
 
 bool lookingAtRedCommunity(std::vector<int> idsDetected);
 
+bool lookingAtOwnCommunity(std::vector<int> idsDetected);
+
+bool lookingAtOwnSubstation(std::vector<int> idsDetected);
+
 // Look for a specific AprilTag ID in the detected targets.
 bool targetFound(int id, std::span<const photonlib::PhotonTrackedTarget> targets);

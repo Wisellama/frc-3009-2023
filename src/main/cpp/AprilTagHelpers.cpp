@@ -1,6 +1,8 @@
 #include "AprilTagHelpers.h"
 #include "AprilTagPositionEnum.h"
 
+#include <frc/DriverStation.h>
+
 /*
 These helper functions might not be useful if we just end up using their Pose Estimation stuff.
 I just wanted to have something to debug with so we can tell which side of the field we're looking at.
@@ -17,6 +19,16 @@ std::vector<AprilTagPosition> AprilTagsRedCommunity {
     AprilTagPosition::RedCommunityCenter,
     AprilTagPosition::RedCommunityRight
 };
+
+bool listHasEntry(AprilTagPosition idSearchingFor, std::vector<int> idsDetected) {
+  for (int id : idsDetected) {
+    if (AprilTagPosition(id) == idSearchingFor) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 bool lookingAtGivenList(std::vector<AprilTagPosition> searchList, std::vector<int> idsDetected) {
   for (int id : idsDetected) {
@@ -43,6 +55,23 @@ bool lookingAtBlueCommunity(std::vector<int> idsDetected) {
 
 bool lookingAtRedCommunity(std::vector<int> idsDetected) {
     return lookingAtGivenList(AprilTagsRedCommunity, idsDetected);
+}
+
+// Defaults to red alliance
+bool lookingAtOwnCommunity(std::vector<int> idsDetected) {
+  if (frc::DriverStation::GetAlliance() == frc::DriverStation::Alliance::kRed) {
+    return lookingAtBlueCommunity(idsDetected);
+  } else {
+    return lookingAtRedCommunity(idsDetected);
+  };
+};
+
+bool lookingAtOwnSubstation(std::vector<int> idsDetected) {
+  if (frc::DriverStation::GetAlliance() == frc::DriverStation::Alliance::kRed) {
+    return listHasEntry(AprilTagPosition::RedSubstation, idsDetected);
+  } else {
+    return listHasEntry(AprilTagPosition::BlueSubstation, idsDetected);
+  };
 }
 
 // Look for a specific AprilTag ID in the detected targets.
