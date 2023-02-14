@@ -136,6 +136,13 @@ public:
     // double targetSkew = table->GetNumber("ts",0.0);
   }
 
+  void TeleopInit() override {
+    m_useAprilTagsPID = false;
+    m_useReflectivePID = false;
+    m_useArmPID = true; // arm motion is much easier to control with PID
+    m_armGoal = m_armMotorEncoder.GetPosition();
+  }
+
   // Teleop lasts 2 minutes 15 seconds
   void TeleopPeriodic() override {
 
@@ -144,37 +151,64 @@ public:
     double sideways = 0.0;
     double rotate = 0.0;
 
+    // Toggle AprilTag following mode
     if (m_xbox.GetStartButton()) {
+      m_useAprilTagsPID = !m_useAprilTagsPID;
+      if (m_useAprilTagsPID) {
+        m_useReflectivePID = false;
+      }
+    }
+
+    // Toggle ReflectiveTape following mode
+    if (m_xbox.GetBackButton()) {
+      m_useReflectivePID = !m_useReflectivePID;
+      if (m_useReflectivePID) {
+        m_useAprilTagsPID = false;
+      }
+    }
+
+    if (m_useAprilTagsPID) {
       // Drive the robot based on camera targeting
       AutoAimResult result = m_cameraAimer.AutoAimAprilTags(-1);
       forward = result.GetForwardSpeed();
+      forward = forward * 0.01;
       rotate = result.GetRotationSpeed();
-    } else if (m_xbox.GetBackButton()) {
+      rotate = rotate / 100.0;
+    } else if (m_useReflectivePID) {
       AutoAimResult result = m_cameraAimer.AutoAimReflectiveTape();
       rotate = result.GetRotationSpeed();
+      rotate = rotate / 100.0;
     } else {
       // Drive the robot based on controller input
-      double x = m_xbox.GetLeftX();
+      // x = m_xbox.GetLeftX();
       double y = m_xbox.GetLeftY() * -1;
       double z = m_xbox.GetRightX();
       //units::degree_t a = m_imu.GetAngle();
 
-      if (std::abs(x) > kDeadband) {
-        sideways = x;
-      }
+      //if (std::abs(x) > kDeadband) {
+      //  sideways = x;
+      //}
       if (std::abs(y) > kDeadband) {
         forward = y;
       }
       if (std::abs(z) > kDeadband) {
         rotate = z;
       }
+
+      if (m_xbox.GetLeftBumper()) {
+        sideways = -0.5;
+      } else if (m_xbox.GetRightBumper()) {
+        sideways = 0.5;
+      }
     }
 
+    // Toggle wheels down for extra grip
     if (m_xbox.GetXButtonPressed()) {
       m_solenoidWheels.Toggle();
       m_wheelsdown = !m_wheelsdown;
     }
     if (m_wheelsdown){
+      // Can't strafe when the wheels are down, tank drive only.
       sideways = 0;
     }
 
@@ -207,20 +241,28 @@ public:
       armSpeed = leftTrigger;
     }
 
+    // Toggle arm PID mode
     if (m_xbox2.GetStartButton()) {
       m_useArmPID = !m_useArmPID;
 
       if (m_useArmPID) {
+        // reset goal to current position
         m_armGoal = m_armMotorEncoder.GetPosition();
       }
     }
 
     if (m_useArmPID) {
-      // TODO: controls for changing armGoal (And have it clamped)
+      if (rightTrigger > kDeadband) {
+        m_armGoal -= rightTrigger * 0.5;
+       } else if (leftTrigger > kDeadband) {
+        m_armGoal += leftTrigger * 0.5;
+       }
+      
       armSpeed = std::clamp(m_armController.Calculate(m_armMotorEncoder.GetPosition(), m_armGoal), -1 * maxArmOutput, maxArmOutput);
       m_armMotor.Set(armSpeed);
     } else {
       armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
+      armSpeed = armSpeed * 0.5;
       m_armMotor.Set(armSpeed);
     }
 
@@ -343,7 +385,9 @@ private:
   frc::PIDController m_armController {ARM_P, 0, ARM_D};
   double m_armRotation = 0.0;
   double m_armGoal = 0.0;
-  bool m_useArmPID = false;
+  bool m_useArmPID = true; // arm motion is much easier to control with PID
+  bool m_useAprilTagsPID = false;
+  bool m_useReflectivePID = false;
   bool m_wheelsdown = false;
  
 
@@ -389,7 +433,7 @@ private:
       std::stringstream topicName;
     }
 
-    rev::SparkMaxRelativeEncoder m_armMotorEncoder = m_armMotor.GetEncoder(rev::SparkMaxRelativeEncoder::Type::kQuadrature);
+    rev::SparkMaxRelativeEncoder m_armMotorEncoder = m_armMotor.GetEncoder();
 
     void publishEncoderDebugInfo() {
       std::stringstream output;

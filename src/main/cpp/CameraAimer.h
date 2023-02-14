@@ -18,48 +18,56 @@ class CameraAimer {
   nt::BooleanPublisher m_publishFacingRed;
   nt::IntegerPublisher m_publishBestTargetId;
   nt::DoublePublisher m_publishReflectiveYaw;
+  nt::DoublePublisher m_publishTargetYaw;
+  nt::DoublePublisher m_publishRotation;
+  nt::DoublePublisher m_publishForwardSpeed;
+  nt::DoublePublisher m_publishRange;
 
   private:
   const std::string CAMERA_MICROSOFT = "Microsoft_LifeCam_HD-3000";
   const std::string CAMERA_LIMELIGHT = "OV5647";
 
-  const units::meter_t TARGET_HEIGHT = 3_ft;
+  const units::meter_t APRIL_TAG_HEIGHT = 36_cm;
 
   // How far from the target we want to be
-  const units::meter_t GOAL_RANGE_METERS = 3_ft;
+  const units::meter_t GOAL_RANGE_METERS = 100_cm; // TODO how long is the arm?
 
-  const double LINEAR_P = 0.1;
-  const double LINEAR_D = 0.0;
+  const double LINEAR_P = 0.05;
+  const double LINEAR_D = 0.01;
   frc2::PIDController m_forwardController{LINEAR_P, 0.0, LINEAR_D};
 
-  const double ANGULAR_P = 0.1;
-  const double ANGULAR_D = 0.0;
-  frc2::PIDController m_turnController{ANGULAR_P, 0.0, ANGULAR_D};
-
-  const double REFLECTIVE_P = 0.1;
-  const double REFLECTIVE_D = 0.0;
-  frc2::PIDController m_turnControllerReflectiveTape{REFLECTIVE_P, 0.0, REFLECTIVE_D};
+  const double ANGULAR_P = 1.0;
+  const double ANGULAR_I = 0.0;
+  const double ANGULAR_D = 0.1;
+  frc2::PIDController m_turnController{ANGULAR_P, ANGULAR_I, ANGULAR_D};
+  frc2::PIDController m_turnControllerReflectiveTape{ANGULAR_P, ANGULAR_I, ANGULAR_D};
 
   photonlib::PhotonCamera m_cameraAprilTags{CAMERA_MICROSOFT};
-  frc::Translation3d m_translation {24_in, 0.0_in, 24_in}; // Camera location on the robot
-  frc::Rotation3d m_rotation {0_deg, 0_deg, 0_deg};
-  frc::Transform3d m_robotToCamera{m_translation, m_rotation};
+  // FRC uses the north-west-up coordinate system, where x = forward, y = horizontal, z = vertical
+  units::meter_t forward = 8_in;
+  units::meter_t horizontal = -13_in;
+  units::meter_t vertical = 25_in;
+  frc::Translation3d m_translationAprilTags {forward, horizontal, vertical}; // Camera location on the robot, measured from the center
+  frc::Rotation3d m_rotation {0_deg, 1_deg, 0_deg};
+  frc::Transform3d m_robotToCameraAprilTags{m_translationAprilTags, m_rotation};
   frc::AprilTagFieldLayout m_fieldLayout = frc::LoadAprilTagLayoutField(frc::AprilTagField::k2023ChargedUp);
   photonlib::PoseStrategy m_poseStrategy = photonlib::PoseStrategy::CLOSEST_TO_REFERENCE_POSE;
 
   photonlib::PhotonCamera m_cameraReflectiveTape{CAMERA_LIMELIGHT};
+  frc::Translation3d m_translationReflectiveTape {forward, -1*horizontal, vertical};
+  frc::Transform3d m_robotToCameraReflectiveTape{m_translationReflectiveTape, m_rotation};
 
-  photonlib::PhotonPoseEstimator m_photonPoseEstimator{
+  photonlib::PhotonPoseEstimator m_photonPoseEstimatorAprilTags{
     m_fieldLayout,
     m_poseStrategy, 
     photonlib::PhotonCamera{CAMERA_MICROSOFT},
-    m_robotToCamera};
+    m_robotToCameraAprilTags};
 
   public:
   CameraAimer();
   ~CameraAimer() {};
 
   AutoAimResult AutoAimAprilTags(int targetId);
-  std::optional<photonlib::EstimatedRobotPose> EstimatePose(frc::Pose3d previous);
+  std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose3d previous);
   AutoAimResult AutoAimReflectiveTape();
 };

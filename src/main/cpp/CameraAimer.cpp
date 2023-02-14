@@ -11,8 +11,13 @@ CameraAimer::CameraAimer() {
   m_publishFacingBlue = table->GetBooleanTopic("FacingBlue").Publish();
   m_publishFacingRed = table->GetBooleanTopic("FacingRed").Publish();
   m_publishBestTargetId = table->GetIntegerTopic("BestTargetId").Publish();
+  m_publishTargetYaw = table->GetDoubleTopic("TargetYaw").Publish();
   m_publishReflectiveYaw = table->GetDoubleTopic("ReflectiveYaw").Publish();
+  m_publishRotation = table->GetDoubleTopic("Rotation").Publish();
+  m_publishForwardSpeed = table->GetDoubleTopic("ForwardSpeed").Publish();
+  m_publishRange = table->GetDoubleTopic("Range").Publish();
 
+  m_publishTargetYaw.Set(99.88);
   m_publishReflectiveYaw.Set(99.88);
 }
 
@@ -45,17 +50,20 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
 
       // First calculate range
       units::meter_t range = photonlib::PhotonUtils::CalculateDistanceToTarget(
-          m_translation.Z(), TARGET_HEIGHT, m_rotation.Y(),
+          m_translationAprilTags.Z(), APRIL_TAG_HEIGHT, m_rotation.Y(),
           units::degree_t{result.GetBestTarget().GetPitch()});
 
       // Use this range as the measurement we give to the PID controller.
-      // -1.0 required to ensure positive PID controller effort _increases_
-      // range
+      // -1.0 required to ensure positive PID controller effort _increases_ range
       forwardSpeed = -1 * m_forwardController.Calculate(range.value(), GOAL_RANGE_METERS.value());
+      m_publishRange.Set(range.value());
+      m_publishForwardSpeed.Set(forwardSpeed);
 
       // Also calculate angular power
       // -1.0 required to ensure positive PID controller effort _increases_ yaw
+      m_publishTargetYaw.Set(result.GetBestTarget().GetYaw());
       rotationSpeed = -1 * m_turnController.Calculate(result.GetBestTarget().GetYaw(), 0);
+      m_publishRotation.Set(rotationSpeed);
     }
 
     AutoAimResult output {forwardSpeed, rotationSpeed};
@@ -75,7 +83,7 @@ AutoAimResult CameraAimer::AutoAimReflectiveTape() {
     return output;
 }
 
-std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePose(frc::Pose3d previous) {
-  m_photonPoseEstimator.SetReferencePose(previous);
-  return m_photonPoseEstimator.Update();
+std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
+  m_photonPoseEstimatorAprilTags.SetReferencePose(previous);
+  return m_photonPoseEstimatorAprilTags.Update();
 }
