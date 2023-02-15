@@ -78,28 +78,34 @@ public:
     m_solenoidWheels.Set(frc::DoubleSolenoid::kReverse);
 
     auto inst = nt::NetworkTableInstance::GetDefault();
-    auto table = inst.GetTable("datatable");
+    auto accelerometerTable = inst.GetTable("accelerometer");
+    auto ultrasonicTable = inst.GetTable("accelerometer");
+    auto table = inst.GetTable("table");
 
-    accelerationX = table->GetDoubleTopic("accelerationX").Publish();
-    accelerationY = table->GetDoubleTopic("accelerationY").Publish();
-    accelerationZ = table->GetDoubleTopic("accelerationZ").Publish();
-    publishDistance = table->GetDoubleTopic("Distance").Publish();
-    publishDistanceRaw = table->GetDoubleTopic("DistanceRaw").Publish();
+    accelerationX = accelerometerTable->GetDoubleTopic("accelerationX").Publish();
+    accelerationY = accelerometerTable->GetDoubleTopic("accelerationY").Publish();
+    accelerationZ = accelerometerTable->GetDoubleTopic("accelerationZ").Publish();
+    publishDistance = ultrasonicTable->GetDoubleTopic("Distance").Publish();
+    publishDistanceRaw = ultrasonicTable->GetDoubleTopic("DistanceRaw").Publish();
     publishCompressorCurrent = table->GetDoubleTopic("CompressorCurrent").Publish();
 
     for (auto motor : sparkMotors) {
       std::stringstream topicName;
       int id = motor->GetDeviceId();
       topicName << "MotorDebug" << id;
-      motorDebugPublishers[id] = table->GetStringTopic(topicName.str()).Publish();
+      auto motorTable = inst.GetTable(topicName.str());
+      motorDebugPublishers[id] = motorTable->GetStringTopic(topicName.str()).Publish();
     }
 
     std::stringstream topicName;
     int id = m_wristMotor.GetDeviceID();
     topicName << "MotorDebug" << id;
-    motorDebugPublishers[id] = table->GetStringTopic(topicName.str()).Publish();
+    auto wristTable = inst.GetTable(topicName.str());
+    motorDebugPublishers[id] = wristTable->GetStringTopic(topicName.str()).Publish();
 
-    ArmEncoderPublisher = table->GetStringTopic("ArmEncoder").Publish();
+    auto encoderTable = inst.GetTable("ArmEncoder");
+
+    ArmEncoderPublisher = encoderTable->GetStringTopic("ArmEncoder").Publish();
   }
 
   // RobotPeriodic will run regardless of enabled/disabled
