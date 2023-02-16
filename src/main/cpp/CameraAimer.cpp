@@ -55,7 +55,7 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
 
       // Use this range as the measurement we give to the PID controller.
       // -1.0 required to ensure positive PID controller effort _increases_ range
-      forwardSpeed = -1 * m_forwardController.Calculate(range.value(), GOAL_RANGE_METERS.value());
+      forwardSpeed = -1 * m_forwardController.Calculate(range.value(), ARM_LENGTH_FROM_CAMERA.value());
       m_publishRange.Set(range.value());
       m_publishForwardSpeed.Set(forwardSpeed);
 
@@ -86,4 +86,20 @@ AutoAimResult CameraAimer::AutoAimReflectiveTape() {
 std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
   m_photonPoseEstimatorAprilTags.SetReferencePose(previous);
   return m_photonPoseEstimatorAprilTags.Update();
+}
+
+void CameraAimer::enableDriverVisionMicrosoft() {
+  m_cameraAprilTags.SetDriverMode(true);
+}
+
+void CameraAimer::disableDriverVisionMicrosoft() {
+  m_cameraAprilTags.SetDriverMode(false);
+}
+
+void CameraAimer::enableDriverVisionLimelight() {
+  m_cameraReflectiveTape.SetDriverMode(true);
+}
+
+void CameraAimer::disableDriverVisionLimelight() {
+  m_cameraReflectiveTape.SetDriverMode(false);
 }

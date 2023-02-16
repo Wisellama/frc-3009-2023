@@ -30,7 +30,7 @@ class CameraAimer {
   const units::meter_t APRIL_TAG_HEIGHT = 36_cm;
 
   // How far from the target we want to be
-  const units::meter_t GOAL_RANGE_METERS = 100_cm; // TODO how long is the arm?
+  const units::meter_t ARM_LENGTH_FROM_CAMERA = 122_cm + 16_cm; // Camera is inset 16cm inside the robot, arm is almost full length outside the robot
 
   const double LINEAR_P = 0.05;
   const double LINEAR_D = 0.01;
@@ -70,4 +70,8 @@ class CameraAimer {
   AutoAimResult AutoAimAprilTags(int targetId);
   std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose3d previous);
   AutoAimResult AutoAimReflectiveTape();
+  void enableDriverVisionMicrosoft();
+  void disableDriverVisionMicrosoft();
+  void enableDriverVisionLimelight();
+  void disableDriverVisionLimelight();
 };

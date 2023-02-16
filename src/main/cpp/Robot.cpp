@@ -147,6 +147,8 @@ public:
     m_useReflectivePID = false;
     m_useArmPID = true; // arm motion is much easier to control with PID
     m_armGoal = m_armMotorEncoder.GetPosition();
+    m_cameraAimer.enableDriverVisionMicrosoft();
+    m_cameraAimer.enableDriverVisionLimelight();
   }
 
   // Teleop lasts 2 minutes 15 seconds
@@ -159,18 +161,12 @@ public:
 
     // Toggle AprilTag following mode
     if (m_xbox.GetStartButton()) {
-      m_useAprilTagsPID = !m_useAprilTagsPID;
-      if (m_useAprilTagsPID) {
-        m_useReflectivePID = false;
-      }
+      toggleAprilTagMode();
     }
 
     // Toggle ReflectiveTape following mode
     if (m_xbox.GetBackButton()) {
-      m_useReflectivePID = !m_useReflectivePID;
-      if (m_useReflectivePID) {
-        m_useAprilTagsPID = false;
-      }
+      toggleReflectiveTapeMode();
     }
 
     if (m_useAprilTagsPID) {
@@ -286,6 +282,11 @@ public:
     // TODO our robot will leave Teleop mode after the game and we have 3 seconds before they score the results.
     // We should probably have this keep us still so that we can stay on the charging station.
     // Set the wheel speeds to zero and keep the stabilizer things deployed if we ever add those.
+  }
+
+  void AutonomousInit() override {
+    m_cameraAimer.disableDriverVisionMicrosoft();
+    m_cameraAimer.disableDriverVisionLimelight();
   }
 
   // Auto lasts 15 seconds
@@ -446,6 +447,33 @@ private:
       output << "Position: " << m_armMotorEncoder.GetPosition() << ", ";
       output << "Velocity: " << m_armMotorEncoder.GetVelocity() << ", ";
       ArmEncoderPublisher.Set(output.str());
+    }
+
+    void toggleAprilTagMode() {
+      m_useAprilTagsPID = !m_useAprilTagsPID;
+      if (m_useAprilTagsPID) {
+        // Disable ReflectiveTape mode
+        m_useReflectivePID = false;
+        // Disable Driver mode to enable pipeline processing
+        m_cameraAimer.disableDriverVisionMicrosoft();
+      } else {
+        // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
+        m_cameraAimer.enableDriverVisionMicrosoft();
+      }
+    }
+
+    void toggleReflectiveTapeMode() {
+      m_useReflectivePID = !m_useReflectivePID;
+
+      if (m_useReflectivePID) {
+        // Disable AprilTag mode
+        m_useAprilTagsPID = false;
+        // Disable Driver mode to enable pipeline processing
+        m_cameraAimer.disableDriverVisionLimelight();
+      } else {
+        // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
+        m_cameraAimer.enableDriverVisionLimelight();
+      } 
     }
 };
 
