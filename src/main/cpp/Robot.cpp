@@ -36,6 +36,7 @@ class Robot : public frc::TimedRobot {
   nt::DoublePublisher publishDistance;
   nt::DoublePublisher publishDistanceRaw;
   nt::DoublePublisher publishCompressorCurrent;
+  nt::DoublePublisher publishAngle;
 
 public:
   // Destructor
@@ -43,7 +44,7 @@ public:
 
   void RobotInit() override {
     // Initialize the gyro/imu
-    //m_imu.Calibrate();
+    m_imu.Calibrate();
 
     // Set all motors into Brake mode so that they try to hold themselves in-position when no input is given.
     for (rev::CANSparkMax* motor : sparkMotors) {
@@ -80,6 +81,7 @@ public:
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto accelerometerTable = inst.GetTable("accelerometer");
     auto ultrasonicTable = inst.GetTable("accelerometer");
+    auto gyroTable = inst.GetTable("gyro");
     auto table = inst.GetTable("table");
 
     accelerationX = accelerometerTable->GetDoubleTopic("accelerationX").Publish();
@@ -88,6 +90,7 @@ public:
     publishDistance = ultrasonicTable->GetDoubleTopic("Distance").Publish();
     publishDistanceRaw = ultrasonicTable->GetDoubleTopic("DistanceRaw").Publish();
     publishCompressorCurrent = table->GetDoubleTopic("CompressorCurrent").Publish();
+    publishAngle = gyroTable->GetDoubleTopic("Angle").Publish();
 
     for (auto motor : sparkMotors) {
       std::stringstream topicName;
@@ -120,6 +123,9 @@ public:
 
     double distance = m_ultrasonic.Get();
     publishDistanceRaw.Set(distance);
+
+    units::degree_t angle = m_imu.GetAngle();
+    publishAngle.Set(angle.value());
 
     distance = distance * kSonicScale; // convert to meters
 
@@ -373,7 +379,7 @@ private:
   frc::XboxController m_xbox1{kXboxPort2};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
-  //frc::ADIS16448_IMU m_imu{};
+  frc::ADIS16448_IMU m_imu{};
 
   frc::BuiltInAccelerometer m_accelerometer{};
 
