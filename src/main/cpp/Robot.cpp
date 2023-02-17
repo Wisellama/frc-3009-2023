@@ -160,12 +160,12 @@ public:
     double rotate = 0.0;
 
     // Toggle AprilTag following mode
-    if (m_xbox.GetStartButton()) {
+    if (m_xbox0.GetStartButton()) {
       toggleAprilTagMode();
     }
 
     // Toggle ReflectiveTape following mode
-    if (m_xbox.GetBackButton()) {
+    if (m_xbox0.GetBackButton()) {
       toggleReflectiveTapeMode();
     }
 
@@ -183,8 +183,8 @@ public:
     } else {
       // Drive the robot based on controller input
       // x = m_xbox.GetLeftX();
-      double y = m_xbox.GetLeftY() * -1;
-      double z = m_xbox.GetRightX();
+      double y = m_xbox0.GetLeftY() * -1;
+      double z = m_xbox0.GetRightX();
       //units::degree_t a = m_imu.GetAngle();
 
       //if (std::abs(x) > kDeadband) {
@@ -197,15 +197,15 @@ public:
         rotate = z;
       }
 
-      if (m_xbox.GetLeftBumper()) {
+      if (m_xbox0.GetLeftBumper()) {
         sideways = -0.5;
-      } else if (m_xbox.GetRightBumper()) {
+      } else if (m_xbox0.GetRightBumper()) {
         sideways = 0.5;
       }
     }
 
     // Toggle wheels down for extra grip
-    if (m_xbox.GetXButtonPressed()) {
+    if (m_xbox0.GetXButtonPressed()) {
       m_solenoidWheels.Toggle();
       m_wheelsdown = !m_wheelsdown;
     }
@@ -217,18 +217,18 @@ public:
     m_robotDrive.DriveCartesian(forward, sideways, rotate);
 
     // Pnuematics control for arm extend and claw
-    if (m_xbox2.GetAButtonPressed()) {
+    if (m_xbox1.GetAButtonPressed()) {
       m_solenoidClaw.Toggle();
     }
     
-    if (m_xbox2.GetYButtonPressed()) {
+    if (m_xbox1.GetYButtonPressed()) {
       m_solenoidArm.Toggle();
     }
     
 
     // Move the arm using controller triggers
-    double leftTrigger = m_xbox2.GetLeftTriggerAxis();
-    double rightTrigger = m_xbox2.GetRightTriggerAxis();
+    double leftTrigger = m_xbox1.GetLeftTriggerAxis();
+    double rightTrigger = m_xbox1.GetRightTriggerAxis();
     leftTrigger = std::clamp(leftTrigger, 0.0, 1.0);
     rightTrigger = std::clamp(rightTrigger, 0.0, 1.0);
     leftTrigger = leftTrigger*0.5;
@@ -244,7 +244,7 @@ public:
     }
 
     // Toggle arm PID mode
-    if (m_xbox2.GetStartButton()) {
+    if (m_xbox1.GetStartButton()) {
       m_useArmPID = !m_useArmPID;
 
       if (m_useArmPID) {
@@ -271,7 +271,7 @@ public:
 
 
     double maxWristOutput = 0.5;
-    double wristSpeed = m_xbox2.GetLeftY();
+    double wristSpeed = m_xbox1.GetLeftY();
 
 
     wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
@@ -369,8 +369,8 @@ private:
   frc::LinearFilter<double> m_accelerationZFilter = frc::LinearFilter<double>::MovingAverage(10);
 
   //frc::Joystick m_stick{kJoystickChannel};
-  frc::XboxController m_xbox{kXboxPort};
-  frc::XboxController m_xbox2{kXboxPort2};
+  frc::XboxController m_xbox0{kXboxPort};
+  frc::XboxController m_xbox1{kXboxPort2};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
   //frc::ADIS16448_IMU m_imu{};
