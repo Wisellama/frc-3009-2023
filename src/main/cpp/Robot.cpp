@@ -2,6 +2,9 @@
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
 
+#include <ctime>
+#include <iostream>
+
 #include <frc/Joystick.h>
 #include <frc/TimedRobot.h>
 #include <frc/drive/MecanumDrive.h>
@@ -28,6 +31,7 @@
 #include <ctre/phoenix/motorcontrol/can/TalonSRX.h>
 
 #include "CameraAimer.h"
+#include "Controls.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -37,6 +41,12 @@ class Robot : public frc::TimedRobot {
   nt::DoublePublisher publishDistanceRaw;
   nt::DoublePublisher publishCompressorCurrent;
   nt::DoublePublisher publishAngle;
+
+  nt::BooleanPublisher publishArmExtended;
+  nt::BooleanPublisher publishClawClosed;
+  nt::BooleanPublisher publishWheelsDown;
+  nt::BooleanPublisher publishBrakeSet;
+  nt::StringPublisher publishTimestamp;
 
 public:
   // Destructor
@@ -74,15 +84,17 @@ public:
     m_robotDrive.SetDeadband(kDeadband); // I don't trust this to do what it says at all
 
     // Set default solenoid positions
-    m_solenoidArm.Set(frc::DoubleSolenoid::kReverse);
-    m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
-    m_solenoidWheels.Set(frc::DoubleSolenoid::kReverse);
+    retractArm();
+    openClaw();
+    raiseWheels();
+    releaseParkingBrake();
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto accelerometerTable = inst.GetTable("accelerometer");
-    auto ultrasonicTable = inst.GetTable("accelerometer");
     auto gyroTable = inst.GetTable("gyro");
+    auto ultrasonicTable = inst.GetTable("ultrasonic");
     auto table = inst.GetTable("table");
+    auto stateTable = inst.GetTable("robot_state");
 
     accelerationX = accelerometerTable->GetDoubleTopic("accelerationX").Publish();
     accelerationY = accelerometerTable->GetDoubleTopic("accelerationY").Publish();
@@ -91,6 +103,11 @@ public:
     publishDistanceRaw = ultrasonicTable->GetDoubleTopic("DistanceRaw").Publish();
     publishCompressorCurrent = table->GetDoubleTopic("CompressorCurrent").Publish();
     publishAngle = gyroTable->GetDoubleTopic("Angle").Publish();
+    publishArmExtended = stateTable->GetBooleanTopic("ArmExtended").Publish();
+    publishClawClosed = stateTable->GetBooleanTopic("ClawClosed").Publish();
+    publishWheelsDown = stateTable->GetBooleanTopic("WheelsDown").Publish();
+    publishBrakeSet = stateTable->GetBooleanTopic("BrakeSet").Publish();
+    publishTimestamp = stateTable->GetStringTopic("Timestamp").Publish();
 
     for (auto motor : sparkMotors) {
       std::stringstream topicName;
@@ -138,6 +155,8 @@ public:
     publishMotorDebugInfo();
     publishEncoderDebugInfo();
 
+    publishRobotState();
+    
     AutoAimResult ignore = m_cameraAimer.AutoAimAprilTags(-1);
     AutoAimResult ignore2 = m_cameraAimer.AutoAimReflectiveTape();
 
@@ -155,6 +174,9 @@ public:
     m_armGoal = m_armMotorEncoder.GetPosition();
     m_cameraAimer.enableDriverVisionMicrosoft();
     m_cameraAimer.enableDriverVisionLimelight();
+
+    raiseWheels();
+    releaseParkingBrake();
   }
 
   // Teleop lasts 2 minutes 15 seconds
@@ -166,12 +188,11 @@ public:
     double rotate = 0.0;
 
     // Toggle AprilTag following mode
-    if (m_xbox0.GetStartButton()) {
+    if (m_controls.AprilTagMode()) {
       toggleAprilTagMode();
     }
 
-    // Toggle ReflectiveTape following mode
-    if (m_xbox0.GetBackButton()) {
+    if (m_controls.ReflectiveTapeMode()) {
       toggleReflectiveTapeMode();
     }
 
@@ -188,69 +209,59 @@ public:
       rotate = rotate / 100.0;
     } else {
       // Drive the robot based on controller input
-      // x = m_xbox.GetLeftX();
-      double y = m_xbox0.GetLeftY() * -1;
-      double z = m_xbox0.GetRightX();
+      sideways = m_controls.DriveStrafe();
+      forward = m_controls.DriveForward();
+      rotate = m_controls.DriveRotate();
       //units::degree_t a = m_imu.GetAngle();
 
-      //if (std::abs(x) > kDeadband) {
-      //  sideways = x;
-      //}
-      if (std::abs(y) > kDeadband) {
-        forward = y;
-      }
-      if (std::abs(z) > kDeadband) {
-        rotate = z;
-      }
-
-      if (m_xbox0.GetLeftBumper()) {
-        sideways = -0.5;
-      } else if (m_xbox0.GetRightBumper()) {
-        sideways = 0.5;
-      }
     }
 
     // Toggle wheels down for extra grip
-    if (m_xbox0.GetXButtonPressed()) {
-      m_solenoidWheels.Toggle();
-      m_wheelsdown = !m_wheelsdown;
+    if (m_controls.ExtraWheels()) {
+      m_wheelsDown = !m_wheelsDown;
     }
-    if (m_wheelsdown){
+
+    if (m_wheelsDown){
+      lowerWheels();
+
       // Can't strafe when the wheels are down, tank drive only.
       sideways = 0;
+
+      // Can deploy parking brakes
+      if (m_controls.ParkingBrake()) {
+        m_parkingBrake = !m_parkingBrake;
+      }
+
+      if (m_parkingBrake) {
+        setParkingBrake();
+      } else {
+        releaseParkingBrake();
+      }
+    } else {
+      raiseWheels();
+      releaseParkingBrake();
     }
 
     m_robotDrive.DriveCartesian(forward, sideways, rotate);
 
     // Pnuematics control for arm extend and claw
-    if (m_xbox1.GetAButtonPressed()) {
+    if (m_controls.ClawClamp()) {
       m_solenoidClaw.Toggle();
     }
     
-    if (m_xbox1.GetYButtonPressed()) {
+    if (m_controls.ArmExtend()) {
       m_solenoidArm.Toggle();
     }
     
 
     // Move the arm using controller triggers
-    double leftTrigger = m_xbox1.GetLeftTriggerAxis();
-    double rightTrigger = m_xbox1.GetRightTriggerAxis();
-    leftTrigger = std::clamp(leftTrigger, 0.0, 1.0);
-    rightTrigger = std::clamp(rightTrigger, 0.0, 1.0);
-    leftTrigger = leftTrigger*0.5;
-    rightTrigger = rightTrigger*0.5;
+    double armRaise = m_controls.ArmRaise();
 
     double armSpeed = 0.0;
     double maxArmOutput = 0.5;
 
-    if (rightTrigger > kDeadband) {
-      armSpeed = -1 * rightTrigger;
-    } else if (leftTrigger > kDeadband) {
-      armSpeed = leftTrigger;
-    }
-
     // Toggle arm PID mode
-    if (m_xbox1.GetStartButton()) {
+    if (m_controls.DirectDriveArm()) {
       m_useArmPID = !m_useArmPID;
 
       if (m_useArmPID) {
@@ -260,25 +271,17 @@ public:
     }
 
     if (m_useArmPID) {
-      if (rightTrigger > kDeadband) {
-        m_armGoal -= rightTrigger * 0.5;
-       } else if (leftTrigger > kDeadband) {
-        m_armGoal += leftTrigger * 0.5;
-       }
-      
-      armSpeed = std::clamp(m_armController.Calculate(m_armMotorEncoder.GetPosition(), m_armGoal), -1 * maxArmOutput, maxArmOutput);
-      m_armMotor.Set(armSpeed);
+      m_armGoal += armRaise;      
+      armSpeed = m_armController.Calculate(m_armMotorEncoder.GetPosition(), m_armGoal);
     } else {
-      armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
-      armSpeed = armSpeed * 0.5;
-      m_armMotor.Set(armSpeed);
+      armSpeed = armRaise * 0.5;
     }
 
-
+    armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
+    m_armMotor.Set(armSpeed);
 
     double maxWristOutput = 0.5;
-    double wristSpeed = m_xbox1.GetLeftY();
-
+    double wristSpeed = m_controls.Wrist();
 
     wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
     m_wristMotor.Set(ctre::phoenix::motorcontrol::TalonSRXControlMode::PercentOutput, wristSpeed);
@@ -293,6 +296,10 @@ public:
   void AutonomousInit() override {
     m_cameraAimer.disableDriverVisionMicrosoft();
     m_cameraAimer.disableDriverVisionLimelight();
+    closeClaw();
+    retractArm();
+    releaseParkingBrake();
+    lowerWheels(); // Vision tracking can only do tank drive mode anyway
   }
 
   // Auto lasts 15 seconds
@@ -332,8 +339,7 @@ private:
   static constexpr int kPnuematics = 50;
   static constexpr int kPDP = 51;
 
-  //static constexpr int kJoystickChannel = 0;
-  static constexpr int kXboxPort = 0;
+  static constexpr int kXboxPort1 = 0;
   static constexpr int kXboxPort2 = 1;
 
   static constexpr double kDeadband = 0.15;
@@ -374,9 +380,7 @@ private:
   frc::LinearFilter<double> m_accelerationYFilter = frc::LinearFilter<double>::MovingAverage(10);
   frc::LinearFilter<double> m_accelerationZFilter = frc::LinearFilter<double>::MovingAverage(10);
 
-  //frc::Joystick m_stick{kJoystickChannel};
-  frc::XboxController m_xbox0{kXboxPort};
-  frc::XboxController m_xbox1{kXboxPort2};
+  Controls m_controls {kXboxPort1, kXboxPort2, kDeadband};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
   frc::ADIS16448_IMU m_imu{};
@@ -391,6 +395,7 @@ private:
   frc::DoubleSolenoid m_solenoidArm{50, frc::PneumaticsModuleType::REVPH, 0, 1}; // Extend/retract the arm
   frc::DoubleSolenoid m_solenoidClaw{50, frc::PneumaticsModuleType::REVPH, 2, 3}; // Open/close the claw
   frc::DoubleSolenoid m_solenoidWheels{50, frc::PneumaticsModuleType::REVPH, 4, 5}; // Drop/raise the wheels
+  frc::DoubleSolenoid m_solenoidBrakes{50, frc::PneumaticsModuleType::REVPH, 6, 7}; // Enable/disable parking brake
 
   // For smoother arm motion, we're using a PIDController that should allow the motor to keep the arm at a given level
   const double ARM_P = 0.1;
@@ -398,10 +403,14 @@ private:
   frc::PIDController m_armController {ARM_P, 0, ARM_D};
   double m_armRotation = 0.0;
   double m_armGoal = 0.0;
+
   bool m_useArmPID = true; // arm motion is much easier to control with PID
   bool m_useAprilTagsPID = false;
   bool m_useReflectivePID = false;
-  bool m_wheelsdown = false;
+  bool m_wheelsDown = false;
+  bool m_parkingBrake = false;
+  bool m_clawClosed = true;
+  bool m_armExtended = false;
  
 
   // A list of all the spark motors so we can conveniently loop through them.
@@ -480,6 +489,57 @@ private:
         // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
         m_cameraAimer.enableDriverVisionLimelight();
       } 
+    }
+
+    void releaseParkingBrake() {
+      m_solenoidBrakes.Set(frc::DoubleSolenoid::kReverse);
+      m_parkingBrake = false;
+    }
+
+    void setParkingBrake() {
+      m_solenoidBrakes.Set(frc::DoubleSolenoid::kForward);
+      m_parkingBrake = true;
+    }
+
+    void lowerWheels() {
+      m_solenoidWheels.Set(frc::DoubleSolenoid::kForward);
+      m_wheelsDown = true;
+    }
+
+    void raiseWheels() {
+      m_solenoidWheels.Set(frc::DoubleSolenoid::kReverse);
+      m_wheelsDown = false;
+    }
+
+    void openClaw() {
+      m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
+      m_clawClosed = false;
+    }
+
+    void closeClaw() {
+      m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
+      m_clawClosed = true;
+    }
+
+    void extendArm() {
+      m_solenoidArm.Set(frc::DoubleSolenoid::kForward);
+      m_armExtended = true;
+    }
+
+    void retractArm() {
+      m_solenoidArm.Set(frc::DoubleSolenoid::kReverse);
+      m_armExtended = false;
+    }
+
+    void publishRobotState() {
+      publishBrakeSet.Set(m_parkingBrake);
+      publishWheelsDown.Set(m_wheelsDown);
+      publishArmExtended.Set(m_armExtended);
+      publishClawClosed.Set(m_clawClosed);
+
+      auto now = std::chrono::system_clock::now();
+      std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
+      publishTimestamp.Set(std::ctime(&nowTime));
     }
 };
 
