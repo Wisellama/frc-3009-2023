@@ -86,7 +86,7 @@ public:
 
     // Set default solenoid positions
     retractArm();
-    openClaw();
+    closeClaw();
     raiseWheels();
 
     auto inst = nt::NetworkTableInstance::GetDefault();
@@ -250,7 +250,7 @@ public:
     double armRaise = m_controls.ArmRaise();
 
     double armSpeed = 0.0;
-    double maxArmOutput = 0.5;
+    double maxArmOutput = 0.75;
 
     // Toggle arm PID mode
     if (m_controls.DirectDriveArm()) {
@@ -272,7 +272,7 @@ public:
     armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armSpeed);
 
-    double maxWristOutput = 0.5;
+    double maxWristOutput = 0.75;
     double wristSpeed = m_controls.Wrist();
 
     wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
@@ -524,12 +524,12 @@ private:
     }
 
     void openClaw() {
-      m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
+      m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
       m_clawClosed = false;
     }
 
     void closeClaw() {
-      m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
+      m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
       m_clawClosed = true;
     }
 
