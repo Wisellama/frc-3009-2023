@@ -43,7 +43,11 @@ double Controls::DriveForward() {
 
     double value = -1 * c->GetLeftY();
 
-    return clampedDeadband(value);
+    if (!m_turbo) {
+        value = clampedDeadband(value);
+    }
+
+    return value;
 }
 
 double Controls::DriveStrafe() {
@@ -132,4 +136,12 @@ bool Controls::DirectDriveArm() {
     frc::XboxController *c = m_controller2;
 
     return c->GetStartButtonPressed();
+}
+
+bool Controls::Turbo() {
+    frc::XboxController *c = m_controller1;
+
+    m_turbo = c->GetRightTriggerAxis() > m_deadband;
+    
+    return m_turbo;
 }

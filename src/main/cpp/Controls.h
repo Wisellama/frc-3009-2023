@@ -10,6 +10,7 @@ class Controls {
     double DriveForward();
     double DriveStrafe();
     double DriveRotate();
+    bool Turbo();
     
     bool ExtraWheels();
     bool ClawClamp();
@@ -28,6 +29,7 @@ class Controls {
     frc::XboxController *m_controller1;
     frc::XboxController *m_controller2;
     double m_deadband;
+    bool m_turbo = false;
 
     double deadband(double value);
     double clampedDeadband(double value);

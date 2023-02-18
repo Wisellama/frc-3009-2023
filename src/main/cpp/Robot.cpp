@@ -80,8 +80,7 @@ public:
     m_rearRightFollow.SetInverted(true);
 
     // Limit the motor max speed
-    double maxOutput = 0.5;
-    m_robotDrive.SetMaxOutput(maxOutput);
+    m_robotDrive.SetMaxOutput(kHalfSpeed);
     m_robotDrive.SetDeadband(kDeadband); // I don't trust this to do what it says at all
 
     // Set default solenoid positions
@@ -172,11 +171,12 @@ public:
     m_useAprilTagsPID = false;
     m_useReflectivePID = false;
     m_useArmPID = true; // arm motion is much easier to control with PID
-    m_armGoal = m_armMotorEncoder.GetPosition();
     m_cameraAimer.enableDriverVisionMicrosoft();
     m_cameraAimer.enableDriverVisionLimelight();
 
     raiseWheels();
+
+    resetPIDs();
   }
 
   // Teleop lasts 2 minutes 15 seconds
@@ -203,10 +203,16 @@ public:
       forward = forward * 0.01;
       rotate = result.GetRotationSpeed();
       rotate = rotate / 100.0;
+
+      // Just manually drive
+      forward = m_controls.DriveForward();
     } else if (m_useReflectivePID) {
       AutoAimResult result = m_cameraAimer.AutoAimReflectiveTape();
       rotate = result.GetRotationSpeed();
       rotate = rotate / 100.0;
+
+      // Manually drive forward
+      forward = m_controls.DriveForward();
     } else {
       // Drive the robot based on controller input
       sideways = m_controls.DriveStrafe();
@@ -214,6 +220,11 @@ public:
       rotate = m_controls.DriveRotate();
       //units::degree_t a = m_imu.GetAngle();
 
+      if (m_controls.Turbo()) {
+        m_robotDrive.SetMaxOutput(kThreeQuartSpeed);
+      } else {
+        m_robotDrive.SetMaxOutput(kHalfSpeed);
+      }
     }
 
     // Toggle wheels down for extra grip
@@ -250,7 +261,7 @@ public:
     double armRaise = m_controls.ArmRaise();
 
     double armSpeed = 0.0;
-    double maxArmOutput = 0.75;
+    double maxArmOutput = 1.0;
 
     // Toggle arm PID mode
     if (m_controls.DirectDriveArm()) {
@@ -263,8 +274,18 @@ public:
     }
 
     if (m_useArmPID) {
-      m_armGoal += armRaise;      
-      armSpeed = m_armController.Calculate(m_armMotorEncoder.GetPosition(), m_armGoal);
+      m_armGoal += armRaise;
+
+      // The values are inverted, a lower value means a higher arm position
+      double max = kArmGoalLowerLimit;
+      double min = kArmGoalUpperLimit;
+      if (m_armExtended) {
+        max = kArmGoalExtendedLowerLimit;
+      } 
+
+      m_armGoal = std::clamp(m_armGoal, min, max);
+
+      armSpeed = m_armController->Calculate(m_armMotorEncoder.GetPosition(), m_armGoal);
     } else {
       armSpeed = armRaise * 0.5;
     }
@@ -272,7 +293,7 @@ public:
     armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armSpeed);
 
-    double maxWristOutput = 0.75;
+    double maxWristOutput = kFullSpeed;
     double wristSpeed = m_controls.Wrist();
 
     wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
@@ -292,6 +313,8 @@ public:
     retractArm();
     releaseParkingBrake();
     lowerWheels(); // Vision tracking can only do tank drive mode anyway
+
+    resetPIDs();
   }
 
   // Auto lasts 15 seconds
@@ -390,11 +413,12 @@ private:
   frc::DoubleSolenoid m_solenoidBrakes{50, frc::PneumaticsModuleType::REVPH, 6, 7}; // Enable/disable parking brake
 
   // For smoother arm motion, we're using a PIDController that should allow the motor to keep the arm at a given level
-  const double ARM_P = 0.1;
-  const double ARM_D = 0.0;
-  frc::PIDController m_armController {ARM_P, 0, ARM_D};
+  const double ARM_P = 0.2;
+  const double ARM_D = 0.001;
+  frc::PIDController *m_armController = new frc::PIDController(ARM_P, 0, ARM_D);
   double m_armRotation = 0.0;
   double m_armGoal = 0.0;
+  // TODO try writing our own "MIN Position" function that does some constant + error*K to move the arm.
 
   bool m_useArmPID = true; // arm motion is much easier to control with PID
   bool m_useAprilTagsPID = false;
@@ -403,6 +427,17 @@ private:
   bool m_parkingBrake = false;
   bool m_clawClosed = true;
   bool m_armExtended = false;
+
+  // 22.2 arm is in and in the robot, roughly 0 degrees straight down
+  // 0.0 arm is all the way up, roughly 100 degrees
+  // 15.0 extended arm down, roughly 30 degrees
+  double kArmGoalLowerLimit = 0.0;
+  double kArmGoalExtendedLowerLimit = -7.5;
+  double kArmGoalUpperLimit = -23.0;
+
+  double kFullSpeed = 1.0;
+  double kThreeQuartSpeed = 0.75;
+  double kHalfSpeed = 0.5;
 
   frc::Pose3d m_robotPose {};
  
@@ -570,11 +605,20 @@ private:
       frc::SmartDashboard::PutBoolean("ClawClosed", m_clawClosed);
       frc::SmartDashboard::PutString("RobotPose", poseStr.str());
 
-      std::cout << "DEBUGING STATE " << m_parkingBrake << m_wheelsDown << m_armExtended << m_clawClosed << std::endl;
-
       auto now = std::chrono::system_clock::now();
       std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
       publishTimestamp.Set(std::ctime(&nowTime));
+
+      std::stringstream armGoal;
+      armGoal << m_armGoal;
+      frc::SmartDashboard::PutString("ArmGoal", armGoal.str());
+      frc::SmartDashboard::PutNumber("ArmPosition", m_armMotorEncoder.GetPosition());
+    }
+
+    void resetPIDs() {
+      delete m_armController;
+      m_armController = new frc::PIDController(ARM_P, 0, ARM_D);
+      m_armGoal = m_armMotorEncoder.GetPosition();
     }
 };
 
