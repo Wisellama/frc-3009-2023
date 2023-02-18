@@ -9,7 +9,6 @@
 #include <frc/TimedRobot.h>
 #include <frc/drive/MecanumDrive.h>
 #include <frc/drive/DifferentialDrive.h>
-#include <frc/XboxController.h>
 #include <frc/ADIS16448_IMU.h>
 #include <frc/TimedRobot.h>
 #include <frc/BuiltInAccelerometer.h>
@@ -18,6 +17,7 @@
 #include <frc/Compressor.h>
 #include <frc/DoubleSolenoid.h>
 #include <frc/controller/ArmFeedforward.h>
+#include <frc/smartdashboard/SmartDashboard.h>
 
 #include <networktables/DoubleTopic.h>
 #include <networktables/NetworkTable.h>
@@ -47,6 +47,7 @@ class Robot : public frc::TimedRobot {
   nt::BooleanPublisher publishWheelsDown;
   nt::BooleanPublisher publishBrakeSet;
   nt::StringPublisher publishTimestamp;
+  nt::StringPublisher publishRobotPose;
 
 public:
   // Destructor
@@ -87,7 +88,6 @@ public:
     retractArm();
     openClaw();
     raiseWheels();
-    releaseParkingBrake();
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto accelerometerTable = inst.GetTable("accelerometer");
@@ -108,6 +108,7 @@ public:
     publishWheelsDown = stateTable->GetBooleanTopic("WheelsDown").Publish();
     publishBrakeSet = stateTable->GetBooleanTopic("BrakeSet").Publish();
     publishTimestamp = stateTable->GetStringTopic("Timestamp").Publish();
+    publishRobotPose = stateTable->GetStringTopic("RobotPose").Publish();
 
     for (auto motor : sparkMotors) {
       std::stringstream topicName;
@@ -176,7 +177,6 @@ public:
     m_cameraAimer.enableDriverVisionLimelight();
 
     raiseWheels();
-    releaseParkingBrake();
   }
 
   // Teleop lasts 2 minutes 15 seconds
@@ -218,7 +218,7 @@ public:
 
     // Toggle wheels down for extra grip
     if (m_controls.ExtraWheels()) {
-      m_wheelsDown = !m_wheelsDown;
+      toggleWheels();
     }
 
     if (m_wheelsDown){
@@ -229,28 +229,20 @@ public:
 
       // Can deploy parking brakes
       if (m_controls.ParkingBrake()) {
-        m_parkingBrake = !m_parkingBrake;
-      }
-
-      if (m_parkingBrake) {
-        setParkingBrake();
-      } else {
-        releaseParkingBrake();
+        toggleParkingBrake();
       }
     } else {
       raiseWheels();
-      releaseParkingBrake();
     }
 
     m_robotDrive.DriveCartesian(forward, sideways, rotate);
 
     // Pnuematics control for arm extend and claw
     if (m_controls.ClawClamp()) {
-      m_solenoidClaw.Toggle();
+      toggleClaw();
     }
-    
     if (m_controls.ArmExtend()) {
-      m_solenoidArm.Toggle();
+      toggleArm();
     }
     
 
@@ -411,6 +403,8 @@ private:
   bool m_parkingBrake = false;
   bool m_clawClosed = true;
   bool m_armExtended = false;
+
+  frc::Pose3d m_robotPose {};
  
 
   // A list of all the spark motors so we can conveniently loop through them.
@@ -471,6 +465,11 @@ private:
         m_useReflectivePID = false;
         // Disable Driver mode to enable pipeline processing
         m_cameraAimer.disableDriverVisionMicrosoft();
+        
+        auto pose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
+        if (pose.has_value()) {
+          m_robotPose = pose.value().estimatedPose;
+        }
       } else {
         // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
         m_cameraAimer.enableDriverVisionMicrosoft();
@@ -501,6 +500,11 @@ private:
       m_parkingBrake = true;
     }
 
+    void toggleParkingBrake() {
+      m_solenoidBrakes.Toggle();
+      m_parkingBrake = !m_parkingBrake;
+    }
+
     void lowerWheels() {
       m_solenoidWheels.Set(frc::DoubleSolenoid::kForward);
       m_wheelsDown = true;
@@ -509,6 +513,14 @@ private:
     void raiseWheels() {
       m_solenoidWheels.Set(frc::DoubleSolenoid::kReverse);
       m_wheelsDown = false;
+
+      // Always release parking brake when raising the wheels
+      releaseParkingBrake();
+    }
+
+    void toggleWheels() {
+      m_solenoidWheels.Toggle();
+      m_wheelsDown = !m_wheelsDown;
     }
 
     void openClaw() {
@@ -521,6 +533,11 @@ private:
       m_clawClosed = true;
     }
 
+    void toggleClaw() {
+      m_solenoidClaw.Toggle();
+      m_clawClosed = !m_clawClosed;
+    }
+
     void extendArm() {
       m_solenoidArm.Set(frc::DoubleSolenoid::kForward);
       m_armExtended = true;
@@ -531,11 +548,29 @@ private:
       m_armExtended = false;
     }
 
+    void toggleArm() {
+      m_solenoidArm.Toggle();
+      m_armExtended = !m_armExtended;
+    }
+
     void publishRobotState() {
+      
       publishBrakeSet.Set(m_parkingBrake);
       publishWheelsDown.Set(m_wheelsDown);
       publishArmExtended.Set(m_armExtended);
       publishClawClosed.Set(m_clawClosed);
+
+      std::stringstream poseStr;
+      poseStr << "X: " << m_robotPose.X().value() << " Y: " << m_robotPose.Y().value() << " Z: " << m_robotPose.Z().value();
+      publishRobotPose.Set(poseStr.str());
+
+      frc::SmartDashboard::PutBoolean("ParkingBrake", m_parkingBrake);
+      frc::SmartDashboard::PutBoolean("WheelsDown", m_wheelsDown);
+      frc::SmartDashboard::PutBoolean("ArmExtended", m_armExtended);
+      frc::SmartDashboard::PutBoolean("ClawClosed", m_clawClosed);
+      frc::SmartDashboard::PutString("RobotPose", poseStr.str());
+
+      std::cout << "DEBUGING STATE " << m_parkingBrake << m_wheelsDown << m_armExtended << m_clawClosed << std::endl;
 
       auto now = std::chrono::system_clock::now();
       std::time_t nowTime = std::chrono::system_clock::to_time_t(now);

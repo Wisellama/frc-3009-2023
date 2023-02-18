@@ -66,6 +66,7 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
       m_publishRotation.Set(rotationSpeed);
     }
 
+    forwardSpeed = 0; // TODO Don't trust the values yet
     AutoAimResult output {forwardSpeed, rotationSpeed};
     return output;
 }

@@ -48,7 +48,7 @@ class CameraAimer {
   units::meter_t horizontal = -13_in;
   units::meter_t vertical = 25_in;
   frc::Translation3d m_translationAprilTags {forward, horizontal, vertical}; // Camera location on the robot, measured from the center
-  frc::Rotation3d m_rotation {0_deg, 1_deg, 0_deg};
+  frc::Rotation3d m_rotation {0_deg, -1_deg, 0_deg};
   frc::Transform3d m_robotToCameraAprilTags{m_translationAprilTags, m_rotation};
   frc::AprilTagFieldLayout m_fieldLayout = frc::LoadAprilTagLayoutField(frc::AprilTagField::k2023ChargedUp);
   photonlib::PoseStrategy m_poseStrategy = photonlib::PoseStrategy::CLOSEST_TO_REFERENCE_POSE;
