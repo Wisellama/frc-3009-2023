@@ -27,6 +27,7 @@
 
 #include <rev/CANSparkMax.h>
 #include <rev/SparkMaxRelativeEncoder.h>
+#include <rev/SparkMaxAlternateEncoder.h>
 
 #include <ctre/phoenix/motorcontrol/can/TalonSRX.h>
 
@@ -503,7 +504,8 @@ private:
       std::stringstream topicName;
     }
 
-    rev::SparkMaxRelativeEncoder m_armMotorEncoder = m_armMotor.GetEncoder();
+    rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(
+      rev::CANEncoder::AlternateEncoderType::kQuadrature, 8192);
     // https://www.revrobotics.com/rev-11-1271/
     //rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(rev::SparkMaxAlternateEncoder::Type::kQuadrature, 8192);
 
@@ -606,7 +608,7 @@ private:
     }
 
     void publishRobotState() {
-      
+    
       publishBrakeSet.Set(m_parkingBrake);
       publishWheelsDown.Set(m_wheelsDown);
       publishArmExtended.Set(m_armExtended);
