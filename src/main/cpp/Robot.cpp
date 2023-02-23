@@ -53,6 +53,7 @@ public:
   // Destructor
   ~Robot() noexcept override {};
 
+  // This runs exactly once on robot power on
   void RobotInit() override {
     // Initialize the gyro/imu
     m_imu.Calibrate();
@@ -87,6 +88,7 @@ public:
     retractArm();
     closeClaw();
     raiseWheels();
+    resetEncoders();
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto accelerometerTable = inst.GetTable("accelerometer");
@@ -126,6 +128,11 @@ public:
     auto encoderTable = inst.GetTable("ArmEncoder");
 
     ArmEncoderPublisher = encoderTable->GetStringTopic("ArmEncoder").Publish();
+  }
+
+  // This code runs anytime you "exit disabled mode", which usually means you enabled the robot.
+  void DisabledExit() {
+    resetEncoders();
   }
 
   // RobotPeriodic will run regardless of enabled/disabled
@@ -203,6 +210,13 @@ public:
       forward = forward * 0.01;
       rotate = result.GetRotationSpeed();
       rotate = rotate / 100.0;
+
+      auto pose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
+      if (pose.has_value()) {
+        m_robotPose = pose.value().estimatedPose;
+        auto a = m_robotPose - m_robotPose;
+
+      }
 
       // Just manually drive
       forward = m_controls.DriveForward();
@@ -315,6 +329,7 @@ public:
     lowerWheels(); // Vision tracking can only do tank drive mode anyway
 
     resetPIDs();
+    resetEncoders();
   }
 
   // Auto lasts 15 seconds
@@ -337,6 +352,10 @@ public:
     and potentially the ultrasonic sensors to help avoid hitting the side walls or the charging station.
     The additional game pieces are set at a specific location, so we might be able to get pretty close using the AprilTags
     */
+  }
+
+  void AutonomousExit() override {
+    setParkingBrake();
   }
 
 private:
@@ -485,6 +504,9 @@ private:
     }
 
     rev::SparkMaxRelativeEncoder m_armMotorEncoder = m_armMotor.GetEncoder();
+    // https://www.revrobotics.com/rev-11-1271/
+    //rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(rev::SparkMaxAlternateEncoder::Type::kQuadrature, 8192);
+
 
     void publishEncoderDebugInfo() {
       std::stringstream output;
@@ -500,11 +522,6 @@ private:
         m_useReflectivePID = false;
         // Disable Driver mode to enable pipeline processing
         m_cameraAimer.disableDriverVisionMicrosoft();
-        
-        auto pose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
-        if (pose.has_value()) {
-          m_robotPose = pose.value().estimatedPose;
-        }
       } else {
         // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
         m_cameraAimer.enableDriverVisionMicrosoft();
@@ -619,6 +636,10 @@ private:
       delete m_armController;
       m_armController = new frc::PIDController(ARM_P, 0, ARM_D);
       m_armGoal = m_armMotorEncoder.GetPosition();
+    }
+
+    void resetEncoders() {
+      m_armMotorEncoder.SetPosition(0);
     }
 };
 

@@ -95,7 +95,7 @@ bool Controls::ArmExtend() {
 double Controls::ArmRaise() {
     frc::XboxController *c = m_controller2;
 
-    double limit = 0.25;
+    double limit = 1.0;
 
     double leftTrigger = c->GetLeftTriggerAxis();
     double rightTrigger = c->GetRightTriggerAxis();
