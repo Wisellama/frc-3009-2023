@@ -26,13 +26,12 @@
 #include <networktables/NetworkTableValue.h>
 
 #include <rev/CANSparkMax.h>
-#include <rev/SparkMaxRelativeEncoder.h>
-#include <rev/SparkMaxAlternateEncoder.h>
 
 #include <ctre/phoenix/motorcontrol/can/TalonSRX.h>
 
 #include "CameraAimer.h"
 #include "Controls.h"
+#include "Arm.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -131,11 +130,6 @@ public:
     ArmEncoderPublisher = encoderTable->GetStringTopic("ArmEncoder").Publish();
   }
 
-  // This code runs anytime you "exit disabled mode", which usually means you enabled the robot.
-  void DisabledExit() {
-    resetEncoders();
-  }
-
   // RobotPeriodic will run regardless of enabled/disabled
   void RobotPeriodic() override {
     m_compressor.EnableDigital();
@@ -178,13 +172,11 @@ public:
   void TeleopInit() override {
     m_useAprilTagsPID = false;
     m_useReflectivePID = false;
-    m_useArmPID = true; // arm motion is much easier to control with PID
+    m_armDirectDrive = true; // arm motion is much easier to control with PID
     m_cameraAimer.enableDriverVisionMicrosoft();
     m_cameraAimer.enableDriverVisionLimelight();
 
     raiseWheels();
-
-    resetPIDs();
   }
 
   // Teleop lasts 2 minutes 15 seconds
@@ -215,7 +207,7 @@ public:
       auto pose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
       if (pose.has_value()) {
         m_robotPose = pose.value().estimatedPose;
-        auto a = m_robotPose - m_robotPose;
+        //auto a = m_robotPose - m_robotPose;
 
       }
 
@@ -280,30 +272,23 @@ public:
 
     // Toggle arm PID mode
     if (m_controls.DirectDriveArm()) {
-      m_useArmPID = !m_useArmPID;
+      m_armDirectDrive = !m_armDirectDrive;
 
-      if (m_useArmPID) {
-        // reset goal to current position
-        m_armGoal = m_armMotorEncoder.GetPosition();
+      if (m_armDirectDrive) {
+        m_arm.ResetGoal();
       }
     }
 
-    if (m_useArmPID) {
-      m_armGoal += armRaise;
-
-      // The values are inverted, a lower value means a higher arm position
-      double max = kArmGoalLowerLimit;
-      double min = kArmGoalUpperLimit;
-      if (m_armExtended) {
-        max = kArmGoalExtendedLowerLimit;
-      } 
-
-      m_armGoal = std::clamp(m_armGoal, min, max);
-
-      armSpeed = m_armController->Calculate(m_armMotorEncoder.GetPosition(), m_armGoal);
-    } else {
+    if (m_armDirectDrive) {
       armSpeed = armRaise * 0.5;
+    } else {
+      m_arm.MoveGoal(armRaise);
+      double move = m_arm.CalculateMove();
+      armSpeed = move;
+      armSpeed = 0; // TODO remove this line after testing
     }
+
+    frc::SmartDashboard::PutNumber("ArmSpeed", armSpeed);
 
     armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armSpeed);
@@ -328,9 +313,6 @@ public:
     retractArm();
     releaseParkingBrake();
     lowerWheels(); // Vision tracking can only do tank drive mode anyway
-
-    resetPIDs();
-    resetEncoders();
   }
 
   // Auto lasts 15 seconds
@@ -432,28 +414,12 @@ private:
   frc::DoubleSolenoid m_solenoidWheels{50, frc::PneumaticsModuleType::REVPH, 4, 5}; // Drop/raise the wheels
   frc::DoubleSolenoid m_solenoidBrakes{50, frc::PneumaticsModuleType::REVPH, 6, 7}; // Enable/disable parking brake
 
-  // For smoother arm motion, we're using a PIDController that should allow the motor to keep the arm at a given level
-  const double ARM_P = 0.2;
-  const double ARM_D = 0.001;
-  frc::PIDController *m_armController = new frc::PIDController(ARM_P, 0, ARM_D);
-  double m_armRotation = 0.0;
-  double m_armGoal = 0.0;
-  // TODO try writing our own "MIN Position" function that does some constant + error*K to move the arm.
-
-  bool m_useArmPID = true; // arm motion is much easier to control with PID
+  bool m_armDirectDrive = false;
   bool m_useAprilTagsPID = false;
   bool m_useReflectivePID = false;
   bool m_wheelsDown = false;
   bool m_parkingBrake = false;
   bool m_clawClosed = true;
-  bool m_armExtended = false;
-
-  // 22.2 arm is in and in the robot, roughly 0 degrees straight down
-  // 0.0 arm is all the way up, roughly 100 degrees
-  // 15.0 extended arm down, roughly 30 degrees
-  double kArmGoalLowerLimit = 0.0;
-  double kArmGoalExtendedLowerLimit = -7.5;
-  double kArmGoalUpperLimit = -23.0;
 
   double kFullSpeed = 1.0;
   double kThreeQuartSpeed = 0.75;
@@ -479,6 +445,12 @@ private:
     std::map<int, nt::StringPublisher> motorDebugPublishers;
     nt::StringPublisher ArmEncoderPublisher;
 
+        // https://www.revrobotics.com/rev-11-1271/
+    rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(
+      rev::SparkMaxAlternateEncoder::Type::kQuadrature, 8192);
+
+    Arm m_arm {&m_armMotorEncoder};
+
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {
         std::stringstream output;
@@ -503,12 +475,6 @@ private:
       motorDebugPublishers[id].Set(output.str());
       std::stringstream topicName;
     }
-
-    rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(
-      rev::CANEncoder::AlternateEncoderType::kQuadrature, 8192);
-    // https://www.revrobotics.com/rev-11-1271/
-    //rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(rev::SparkMaxAlternateEncoder::Type::kQuadrature, 8192);
-
 
     void publishEncoderDebugInfo() {
       std::stringstream output;
@@ -594,24 +560,24 @@ private:
 
     void extendArm() {
       m_solenoidArm.Set(frc::DoubleSolenoid::kForward);
-      m_armExtended = true;
+      m_arm.SetExtended();
     }
 
     void retractArm() {
       m_solenoidArm.Set(frc::DoubleSolenoid::kReverse);
-      m_armExtended = false;
+      m_arm.SetRetracted();
     }
 
     void toggleArm() {
       m_solenoidArm.Toggle();
-      m_armExtended = !m_armExtended;
+      m_arm.ToggleExtended();
     }
 
     void publishRobotState() {
     
       publishBrakeSet.Set(m_parkingBrake);
       publishWheelsDown.Set(m_wheelsDown);
-      publishArmExtended.Set(m_armExtended);
+      publishArmExtended.Set(m_arm.GetExtendedState());
       publishClawClosed.Set(m_clawClosed);
 
       std::stringstream poseStr;
@@ -620,7 +586,7 @@ private:
 
       frc::SmartDashboard::PutBoolean("ParkingBrake", m_parkingBrake);
       frc::SmartDashboard::PutBoolean("WheelsDown", m_wheelsDown);
-      frc::SmartDashboard::PutBoolean("ArmExtended", m_armExtended);
+      frc::SmartDashboard::PutBoolean("ArmExtended", m_arm.GetExtendedState());
       frc::SmartDashboard::PutBoolean("ClawClosed", m_clawClosed);
       frc::SmartDashboard::PutString("RobotPose", poseStr.str());
 
@@ -628,16 +594,8 @@ private:
       std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
       publishTimestamp.Set(std::ctime(&nowTime));
 
-      std::stringstream armGoal;
-      armGoal << m_armGoal;
-      frc::SmartDashboard::PutString("ArmGoal", armGoal.str());
-      frc::SmartDashboard::PutNumber("ArmPosition", m_armMotorEncoder.GetPosition());
-    }
-
-    void resetPIDs() {
-      delete m_armController;
-      m_armController = new frc::PIDController(ARM_P, 0, ARM_D);
-      m_armGoal = m_armMotorEncoder.GetPosition();
+      frc::SmartDashboard::PutNumber("ArmGoal", m_arm.GetGoal());
+      frc::SmartDashboard::PutNumber("ArmPosition", m_arm.GetPosition());
     }
 
     void resetEncoders() {
