@@ -23,7 +23,7 @@ class Controls {
     bool DirectDriveArm();
     bool ReflectiveTapeMode();
     bool AprilTagMode();
-
+    bool ClawPressure();
 
     private:
     frc::XboxController *m_controller1;

@@ -29,7 +29,7 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
     // Otherwise we'll only track for the exact target we're looking for.
 
     // Query the latest result from PhotonVision
-    const auto& result = m_cameraAprilTags.GetLatestResult();
+    const auto& result = m_cameraMicrosoft.GetLatestResult();
 
     double forwardSpeed = 0.0;
     double rotationSpeed = 0.0;
@@ -90,11 +90,11 @@ std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(
 }
 
 void CameraAimer::enableDriverVisionMicrosoft() {
-  m_cameraAprilTags.SetDriverMode(true);
+  m_cameraMicrosoft.SetDriverMode(true);
 }
 
 void CameraAimer::disableDriverVisionMicrosoft() {
-  m_cameraAprilTags.SetDriverMode(false);
+  m_cameraMicrosoft.SetDriverMode(false);
 }
 
 void CameraAimer::enableDriverVisionLimelight() {
@@ -103,4 +103,24 @@ void CameraAimer::enableDriverVisionLimelight() {
 
 void CameraAimer::disableDriverVisionLimelight() {
   m_cameraReflectiveTape.SetDriverMode(false);
+}
+
+units::meter_t CameraAimer::getDistanceFromGrid() {
+  const auto& result = m_cameraMicrosoft.GetLatestResult();
+
+  if (!result.HasTargets()) {
+    return -1_m;
+  }
+
+  std::vector<int> aprilTagsFound = getAprilTagIds(result.GetTargets());
+
+  if (!lookingAtOwnCommunity(aprilTagsFound)) {
+    return -1_m;
+  }
+
+  // units::meter_t range = photonlib::PhotonUtils::CalculateDistanceToTarget(
+  //         CAMERA_HEIGHT, TARGET_HEIGHT, CAMERA_PITCH
+  //         units::degree_t{result.GetBestTarget().GetPitch()});
+
+  return -1_m;
 }

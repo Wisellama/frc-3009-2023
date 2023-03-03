@@ -18,6 +18,8 @@
 #include <frc/DoubleSolenoid.h>
 #include <frc/controller/ArmFeedforward.h>
 #include <frc/smartdashboard/SmartDashboard.h>
+#include <frc/I2C.h>
+#include <cameraserver/CameraServer.h>
 
 #include <networktables/DoubleTopic.h>
 #include <networktables/NetworkTable.h>
@@ -27,11 +29,10 @@
 
 #include <rev/CANSparkMax.h>
 
-#include <ctre/phoenix/motorcontrol/can/TalonSRX.h>
-
 #include "CameraAimer.h"
 #include "Controls.h"
 #include "Arm.h"
+#include "DigitMXPDisplay.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -56,7 +57,10 @@ public:
   // This runs exactly once on robot power on
   void RobotInit() override {
     // Initialize the gyro/imu
-    m_imu.Calibrate();
+    //m_imu.Calibrate();
+
+    // Start Arm-mounted camera connected directly to roborio
+    frc::CameraServer::StartAutomaticCapture();
 
     // Set all motors into Brake mode so that they try to hold themselves in-position when no input is given.
     for (rev::CANSparkMax* motor : sparkMotors) {
@@ -64,9 +68,6 @@ public:
       motor->SetIdleMode(rev::CANSparkMax::IdleMode::kBrake);
       motor->Set(0);
     }
-    m_wristMotor.SetNeutralMode(ctre::phoenix::motorcontrol::NeutralMode::Brake);
-    m_wristMotor.Set(ctre::phoenix::motorcontrol::TalonSRXControlMode::PercentOutput, 0);
-  
 
     // Set secondary motor controllers to follow their pairs
     m_frontLeftFollow.Follow(m_frontLeft);
@@ -89,6 +90,7 @@ public:
     closeClaw();
     raiseWheels();
     resetEncoders();
+    lightClawPressure();
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto accelerometerTable = inst.GetTable("accelerometer");
@@ -119,12 +121,6 @@ public:
       motorDebugPublishers[id] = motorTable->GetStringTopic(topicName.str()).Publish();
     }
 
-    std::stringstream topicName;
-    int id = m_wristMotor.GetDeviceID();
-    topicName << "MotorDebug" << id;
-    auto wristTable = inst.GetTable(topicName.str());
-    motorDebugPublishers[id] = wristTable->GetStringTopic(topicName.str()).Publish();
-
     auto encoderTable = inst.GetTable("ArmEncoder");
 
     ArmEncoderPublisher = encoderTable->GetStringTopic("ArmEncoder").Publish();
@@ -143,8 +139,8 @@ public:
     double distance = m_ultrasonic.Get();
     publishDistanceRaw.Set(distance);
 
-    units::degree_t angle = m_imu.GetAngle();
-    publishAngle.Set(angle.value());
+    //units::degree_t angle = m_imu.GetAngle();
+    //publishAngle.Set(angle.value());
 
     distance = distance * kSonicScale; // convert to meters
 
@@ -262,6 +258,9 @@ public:
     if (m_controls.ArmExtend()) {
       toggleArm();
     }
+    if (m_controls.ClawPressure()) {
+      toggleClawPressure();
+    }
     
 
     // Move the arm using controller triggers
@@ -273,19 +272,18 @@ public:
     // Toggle arm PID mode
     if (m_controls.DirectDriveArm()) {
       m_armDirectDrive = !m_armDirectDrive;
-
-      if (m_armDirectDrive) {
-        m_arm.ResetGoal();
-      }
+      m_arm.ResetGoal();
     }
 
     if (m_armDirectDrive) {
-      armSpeed = armRaise * 0.5;
+      armSpeed = armRaise * 0.4;
     } else {
-      m_arm.MoveGoal(armRaise);
+      // The controller will give us values from -1 to 1, so move about 1 degree per cycle
+      double encoderMove = m_arm.DegreesToEncoder(armRaise);
+      encoderMove = -1 * encoderMove;
+      m_arm.MoveGoal(encoderMove);
       double move = m_arm.CalculateMove();
       armSpeed = move;
-      armSpeed = 0; // TODO remove this line after testing
     }
 
     frc::SmartDashboard::PutNumber("ArmSpeed", armSpeed);
@@ -293,11 +291,11 @@ public:
     armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armSpeed);
 
-    double maxWristOutput = kFullSpeed;
+    double maxWristOutput = kHalfSpeed;
     double wristSpeed = m_controls.Wrist();
 
     wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
-    m_wristMotor.Set(ctre::phoenix::motorcontrol::TalonSRXControlMode::PercentOutput, wristSpeed);
+    m_wristMotor.Set(wristSpeed);
   }
 
   void TeleopExit() override {
@@ -335,6 +333,28 @@ public:
     and potentially the ultrasonic sensors to help avoid hitting the side walls or the charging station.
     The additional game pieces are set at a specific location, so we might be able to get pretty close using the AprilTags
     */
+
+    // Left/right start
+    // Start robot facing the grid
+    // Get in position to lift arm to top(?) shelf/pole
+    // Get claw in position and release
+    // Retract claw and drive out
+    // Turn to face game piece and collect
+    // Drive back to grid and face it
+    // Line up to deposit 2nd piece (should be different piece type to start a link? or both cones)
+    // Deposit 2nd piece
+    // Line up with april tags to get onto charging station
+    // Drive up charging station and balance
+        // needs a way to disable this incase some other team is going to do this
+        // if not charging station, drive out and pick up a 3rd piece if possible
+    
+    // Center start
+    // Start robot facing the grid
+    // Get in position to lift arm to top(?) shelf/pole
+    // Get claw in position and release
+    // drive out over charging station perhaps?
+    // ???
+    // balance if going to balance
   }
 
   void AutonomousExit() override {
@@ -355,6 +375,7 @@ private:
   static constexpr int kWristChannel = 10;
   static constexpr int kPnuematics = 50;
   static constexpr int kPDP = 51;
+  static constexpr int kPidgeonIMU = 52; // TODO set this up on the can network
 
   static constexpr int kXboxPort1 = 0;
   static constexpr int kXboxPort2 = 1;
@@ -373,7 +394,7 @@ private:
   */
   static constexpr double kSonicScale = 1024.0 * 5;
   static constexpr double kSonicLimitLower = 300.0;
-  static constexpr int kSonicPort = 3;
+  static constexpr int kSonicPort = 2;
 
   // These SparkMax controllers handle the wheels and driving
   rev::CANSparkMax m_frontLeft{kFrontLeftChannel, rev::CANSparkMax::MotorType::kBrushless};
@@ -390,9 +411,9 @@ private:
   // This SparkMax controls the arm up/down rotation
   rev::CANSparkMax m_armMotor{kArmChannel, rev::CANSparkMax::MotorType::kBrushless};
 
-  // This Talon SRX controls the claw's wrist rotation
-  ctre::phoenix::motorcontrol::can::TalonSRX m_wristMotor{kWristChannel};
-
+  // This SparkMax controls the claw's wrist rotation
+  rev::CANSparkMax m_wristMotor{kWristChannel, rev::CANSparkMax::MotorType::kBrushless};
+  
   frc::LinearFilter<double> m_accelerationXFilter = frc::LinearFilter<double>::MovingAverage(10);
   frc::LinearFilter<double> m_accelerationYFilter = frc::LinearFilter<double>::MovingAverage(10);
   frc::LinearFilter<double> m_accelerationZFilter = frc::LinearFilter<double>::MovingAverage(10);
@@ -400,7 +421,7 @@ private:
   Controls m_controls {kXboxPort1, kXboxPort2, kDeadband};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
-  frc::ADIS16448_IMU m_imu{};
+  //frc::ADIS16448_IMU m_imu{};
 
   frc::BuiltInAccelerometer m_accelerometer{};
 
@@ -413,6 +434,7 @@ private:
   frc::DoubleSolenoid m_solenoidClaw{50, frc::PneumaticsModuleType::REVPH, 2, 3}; // Open/close the claw
   frc::DoubleSolenoid m_solenoidWheels{50, frc::PneumaticsModuleType::REVPH, 4, 5}; // Drop/raise the wheels
   frc::DoubleSolenoid m_solenoidBrakes{50, frc::PneumaticsModuleType::REVPH, 6, 7}; // Enable/disable parking brake
+  frc::DoubleSolenoid m_solenoidClawPressure{50, frc::PneumaticsModuleType::REVPH, 8, 9}; // Set the claw to high/low pressure mode
 
   bool m_armDirectDrive = false;
   bool m_useAprilTagsPID = false;
@@ -420,13 +442,15 @@ private:
   bool m_wheelsDown = false;
   bool m_parkingBrake = false;
   bool m_clawClosed = true;
+  bool m_clawPressureHigh = false;
 
   double kFullSpeed = 1.0;
   double kThreeQuartSpeed = 0.75;
   double kHalfSpeed = 0.5;
 
   frc::Pose3d m_robotPose {};
- 
+
+  DigitMXPDisplay m_digitBoard {};
 
   // A list of all the spark motors so we can conveniently loop through them.
   std::vector<rev::CANSparkMax*> sparkMotors = {
@@ -440,6 +464,7 @@ private:
       &m_rearLeft,
       &m_rearLeftFollow,
       &m_armMotor,
+      &m_wristMotor,
     };
 
     std::map<int, nt::StringPublisher> motorDebugPublishers;
@@ -463,17 +488,6 @@ private:
         output << "\n";
         motorDebugPublishers[id].Set(output.str());
       }
-
-      std::stringstream output;
-      int id = m_wristMotor.GetDeviceID();
-      output << "ID: " << id << ", ";
-      output << "OutputVoltage: " << m_wristMotor.GetMotorOutputVoltage() << ", ";
-      output << "BusVoltage: " << m_wristMotor.GetBusVoltage() << ", ";
-      output << "SupplyCurrent: " << m_wristMotor.GetSupplyCurrent() << ", ";
-      output << "OutputCurrent: " << m_wristMotor.GetOutputCurrent() << ", ";
-      output << "\n";
-      motorDebugPublishers[id].Set(output.str());
-      std::stringstream topicName;
     }
 
     void publishEncoderDebugInfo() {
@@ -541,15 +555,20 @@ private:
     void toggleWheels() {
       m_solenoidWheels.Toggle();
       m_wheelsDown = !m_wheelsDown;
+
+      if (!m_wheelsDown) {
+        // Always release the parking brake if we raise the wheels
+        releaseParkingBrake();
+      }
     }
 
     void openClaw() {
-      m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
+      m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
       m_clawClosed = false;
     }
 
     void closeClaw() {
-      m_solenoidClaw.Set(frc::DoubleSolenoid::kReverse);
+      m_solenoidClaw.Set(frc::DoubleSolenoid::kForward);
       m_clawClosed = true;
     }
 
@@ -571,6 +590,21 @@ private:
     void toggleArm() {
       m_solenoidArm.Toggle();
       m_arm.ToggleExtended();
+    }
+
+    void toggleClawPressure() {
+      m_solenoidClawPressure.Toggle();
+      m_clawPressureHigh = !m_clawPressureHigh;
+    }
+
+    void lightClawPressure() {
+      m_solenoidClawPressure.Set(frc::DoubleSolenoid::kReverse);
+      m_clawPressureHigh = false;
+    }
+
+    void heavyClawPressure() {
+      m_solenoidClawPressure.Set(frc::DoubleSolenoid::kForward);
+      m_clawPressureHigh = true;
     }
 
     void publishRobotState() {
@@ -595,12 +629,20 @@ private:
       publishTimestamp.Set(std::ctime(&nowTime));
 
       frc::SmartDashboard::PutNumber("ArmGoal", m_arm.GetGoal());
-      frc::SmartDashboard::PutNumber("ArmPosition", m_arm.GetPosition());
+      frc::SmartDashboard::PutNumber("ArmPositionEncoder", m_arm.GetEncoderPosition());
+      frc::SmartDashboard::PutNumber("ArmPositionDegrees", m_arm.GetPosition());
+
+      frc::SmartDashboard::PutBoolean("DigitDisplayA", m_digitBoard.GetButtonA());
+      frc::SmartDashboard::PutBoolean("DigitDisplayB", m_digitBoard.GetButtonA());
+      frc::SmartDashboard::PutNumber("DigitDisplayPot", m_digitBoard.GetPot());
+
     }
 
     void resetEncoders() {
       m_armMotorEncoder.SetPosition(0);
     }
+
+
 };
 
 #ifndef RUNNING_FRC_TESTS

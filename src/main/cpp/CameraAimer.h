@@ -42,7 +42,7 @@ class CameraAimer {
   frc2::PIDController m_turnController{ANGULAR_P, ANGULAR_I, ANGULAR_D};
   frc2::PIDController m_turnControllerReflectiveTape{ANGULAR_P, ANGULAR_I, ANGULAR_D};
 
-  photonlib::PhotonCamera m_cameraAprilTags{CAMERA_MICROSOFT};
+  photonlib::PhotonCamera m_cameraMicrosoft{CAMERA_MICROSOFT};
   // FRC uses the north-west-up coordinate system, where x = forward, y = horizontal, z = vertical
   units::meter_t forward = 8_in;
   units::meter_t horizontal = -13_in;
@@ -70,6 +70,8 @@ class CameraAimer {
   AutoAimResult AutoAimAprilTags(int targetId);
   std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose3d previous);
   AutoAimResult AutoAimReflectiveTape();
+
+  units::meter_t getDistanceFromGrid();
   void enableDriverVisionMicrosoft();
   void disableDriverVisionMicrosoft();
   void enableDriverVisionLimelight();

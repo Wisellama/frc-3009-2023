@@ -117,7 +117,8 @@ double Controls::ArmRaise() {
 double Controls::Wrist() {
     frc::XboxController *c = m_controller2;
 
-    return c->GetLeftY();
+    double value = c->GetLeftY();
+    return clampedDeadband(value);
 }
 
 bool Controls::ReflectiveTapeMode() {
@@ -145,3 +146,9 @@ bool Controls::Turbo() {
     
     return m_turbo;
 }
+bool Controls::ClawPressure() {
+    frc::XboxController *c = m_controller2;
+
+    return c->GetXButtonPressed();
+}    
+    

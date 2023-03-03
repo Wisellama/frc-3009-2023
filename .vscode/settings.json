@@ -88,6 +88,10 @@
     "typeindex": "cpp",
     "typeinfo": "cpp",
     "variant": "cpp",
-    "*.mac": "cpp"
+    "*.mac": "cpp",
+    "xmemory": "cpp",
+    "xstddef": "cpp",
+    "xtr1common": "cpp",
+    "xutility": "cpp"
   }
 }
