@@ -27,6 +27,10 @@ class CameraAimer {
   const std::string CAMERA_MICROSOFT = "Microsoft_LifeCam_HD-3000";
   const std::string CAMERA_LIMELIGHT = "OV5647";
 
+  const int PIPELINE_APRILTAGS = 0;
+  const int PIPELINE_REFLECTIVETAPE = 1;
+  const int PIPELINE_COLORS = 2;
+
   const units::meter_t APRIL_TAG_HEIGHT = 36_cm;
 
   // How far from the target we want to be
@@ -53,7 +57,7 @@ class CameraAimer {
   frc::AprilTagFieldLayout m_fieldLayout = frc::LoadAprilTagLayoutField(frc::AprilTagField::k2023ChargedUp);
   photonlib::PoseStrategy m_poseStrategy = photonlib::PoseStrategy::CLOSEST_TO_REFERENCE_POSE;
 
-  photonlib::PhotonCamera m_cameraReflectiveTape{CAMERA_LIMELIGHT};
+  photonlib::PhotonCamera m_cameraLimeLight{CAMERA_LIMELIGHT};
   frc::Translation3d m_translationReflectiveTape {forward, -1*horizontal, vertical};
   frc::Transform3d m_robotToCameraReflectiveTape{m_translationReflectiveTape, m_rotation};
 
@@ -63,6 +67,10 @@ class CameraAimer {
     photonlib::PhotonCamera{CAMERA_MICROSOFT},
     m_robotToCameraAprilTags};
 
+  bool m_reflectiveTapeMode = false;
+  bool m_aprilTagMode = false;
+  bool m_colorMode = false;
+
   public:
   CameraAimer();
   ~CameraAimer() {};
@@ -71,9 +79,22 @@ class CameraAimer {
   std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose3d previous);
   AutoAimResult AutoAimReflectiveTape();
 
+  void ToggleAprilTagMode();
+  void ToggleReflectiveTapeMode();
+  void SetAprilTagMode();
+  void SetReflectiveTapeMode();
+  bool GetAprilTagMode();
+  bool GetReflectiveTapeMode();
+
   units::meter_t getDistanceFromGrid();
+
   void enableDriverVisionMicrosoft();
   void disableDriverVisionMicrosoft();
+
   void enableDriverVisionLimelight();
   void disableDriverVisionLimelight();
+
+  void limeLightPipelineAprilTags();
+  void limeLightPipelineReflectiveTape();
+  void limeLightPipelineColors();
 };

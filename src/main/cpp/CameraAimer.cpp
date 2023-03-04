@@ -72,7 +72,7 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
 }
 
 AutoAimResult CameraAimer::AutoAimReflectiveTape() {
-  const auto& result = m_cameraReflectiveTape.GetLatestResult();
+  const auto& result = m_cameraLimeLight.GetLatestResult();
   double rotationSpeed = 0.0;
 
   if (result.HasTargets()) {
@@ -98,11 +98,11 @@ void CameraAimer::disableDriverVisionMicrosoft() {
 }
 
 void CameraAimer::enableDriverVisionLimelight() {
-  m_cameraReflectiveTape.SetDriverMode(true);
+  m_cameraLimeLight.SetDriverMode(true);
 }
 
 void CameraAimer::disableDriverVisionLimelight() {
-  m_cameraReflectiveTape.SetDriverMode(false);
+  m_cameraLimeLight.SetDriverMode(false);
 }
 
 units::meter_t CameraAimer::getDistanceFromGrid() {
@@ -123,4 +123,71 @@ units::meter_t CameraAimer::getDistanceFromGrid() {
   //         units::degree_t{result.GetBestTarget().GetPitch()});
 
   return -1_m;
+}
+
+void CameraAimer::limeLightPipelineAprilTags() {
+  m_cameraLimeLight.SetPipelineIndex(PIPELINE_APRILTAGS);
+}
+
+void CameraAimer::limeLightPipelineReflectiveTape() {
+  m_cameraLimeLight.SetPipelineIndex(PIPELINE_REFLECTIVETAPE);
+}
+
+void CameraAimer::limeLightPipelineColors() {
+  m_cameraLimeLight.SetPipelineIndex(PIPELINE_COLORS);
+}
+
+void CameraAimer::ToggleAprilTagMode() {
+  m_aprilTagMode = !m_aprilTagMode;
+  if (m_aprilTagMode) {
+    SetAprilTagMode();
+  } else {
+    // Enable Driver mode to give us a smoother live feed
+    enableDriverVisionMicrosoft();
+    enableDriverVisionLimelight();
+  }
+}
+
+void CameraAimer::ToggleReflectiveTapeMode() {
+  m_reflectiveTapeMode = !m_reflectiveTapeMode;
+
+  if (m_reflectiveTapeMode) {
+    SetReflectiveTapeMode();
+  } else {
+    // Enable Driver mode to give us a smoother live feed
+    enableDriverVisionLimelight();
+  }
+}
+
+// This only applies to the LimeLight
+void CameraAimer::SetAprilTagMode() {
+  // Disable other modes
+  m_reflectiveTapeMode = false;
+  m_colorMode = false;
+
+  // Disable Driver mode to enable pipeline processing
+  disableDriverVisionLimelight();
+
+  // Set the LimeLight to AprilTag Mode
+  m_cameraLimeLight.SetPipelineIndex(PIPELINE_APRILTAGS);
+}
+
+void CameraAimer::SetReflectiveTapeMode(){
+  // Disable other modes
+  m_aprilTagMode = false;
+  m_colorMode = false;
+
+  // Disable Driver mode to enable pipeline processing
+  disableDriverVisionLimelight();
+
+  // Set the LimeLight to Reflective Tape Mode
+  m_cameraLimeLight.SetPipelineIndex(PIPELINE_REFLECTIVETAPE);
+}
+
+bool CameraAimer::GetAprilTagMode() {
+  return m_aprilTagMode;
+}
+
+bool CameraAimer::GetReflectiveTapeMode() {
+  return m_reflectiveTapeMode;
 }

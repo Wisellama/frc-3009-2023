@@ -24,6 +24,7 @@ class Controls {
     bool ReflectiveTapeMode();
     bool AprilTagMode();
     bool ClawPressure();
+    bool ToggleLimits();
 
     private:
     frc::XboxController *m_controller1;

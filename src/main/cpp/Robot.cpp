@@ -33,6 +33,7 @@
 #include "Controls.h"
 #include "Arm.h"
 #include "DigitMXPDisplay.h"
+#include "Wrist.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -166,9 +167,7 @@ public:
   }
 
   void TeleopInit() override {
-    m_useAprilTagsPID = false;
-    m_useReflectivePID = false;
-    m_armDirectDrive = true; // arm motion is much easier to control with PID
+    m_armDirectDrive = false;
     m_cameraAimer.enableDriverVisionMicrosoft();
     m_cameraAimer.enableDriverVisionLimelight();
 
@@ -185,14 +184,14 @@ public:
 
     // Toggle AprilTag following mode
     if (m_controls.AprilTagMode()) {
-      toggleAprilTagMode();
+      m_cameraAimer.ToggleAprilTagMode();
     }
 
     if (m_controls.ReflectiveTapeMode()) {
-      toggleReflectiveTapeMode();
+      m_cameraAimer.ToggleReflectiveTapeMode();
     }
 
-    if (m_useAprilTagsPID) {
+    if (m_cameraAimer.GetAprilTagMode()) {
       // Drive the robot based on camera targeting
       AutoAimResult result = m_cameraAimer.AutoAimAprilTags(-1);
       forward = result.GetForwardSpeed();
@@ -209,7 +208,7 @@ public:
 
       // Just manually drive
       forward = m_controls.DriveForward();
-    } else if (m_useReflectivePID) {
+    } else if (m_cameraAimer.GetReflectiveTapeMode()) {
       AutoAimResult result = m_cameraAimer.AutoAimReflectiveTape();
       rotate = result.GetRotationSpeed();
       rotate = rotate / 100.0;
@@ -293,9 +292,20 @@ public:
 
     double maxWristOutput = kHalfSpeed;
     double wristSpeed = m_controls.Wrist();
+    m_wrist.MoveGoal(wristSpeed);
 
-    wristSpeed = std::clamp(wristSpeed, -1 * maxWristOutput, maxWristOutput);
-    m_wristMotor.Set(wristSpeed);
+    double wristMove = m_wrist.CalculateMove();
+    if (std::abs(wristMove) > 0.01) {
+      wristMove = std::clamp(wristMove, -1 * maxWristOutput, maxWristOutput);
+    } else {
+      wristMove = 0;
+    }
+
+    m_wristMotor.Set(wristMove);
+
+    if (m_controls.ToggleLimits()){
+      m_arm.ToggleLimits();
+    }
   }
 
   void TeleopExit() override {
@@ -305,8 +315,15 @@ public:
   }
 
   void AutonomousInit() override {
+    // Set the Microsoft camera to process AprilTags
     m_cameraAimer.disableDriverVisionMicrosoft();
-    m_cameraAimer.disableDriverVisionLimelight();
+
+    // Set the LimeLight camera to process AprilTags too,
+    m_cameraAimer.SetAprilTagMode();
+
+    // Alternatively, we could have it do reflective tape, or switch to it if needed
+    //m_cameraAimer.SetReflectiveTapeMode();
+
     closeClaw();
     retractArm();
     releaseParkingBrake();
@@ -437,8 +454,6 @@ private:
   frc::DoubleSolenoid m_solenoidClawPressure{50, frc::PneumaticsModuleType::REVPH, 8, 9}; // Set the claw to high/low pressure mode
 
   bool m_armDirectDrive = false;
-  bool m_useAprilTagsPID = false;
-  bool m_useReflectivePID = false;
   bool m_wheelsDown = false;
   bool m_parkingBrake = false;
   bool m_clawClosed = true;
@@ -470,11 +485,13 @@ private:
     std::map<int, nt::StringPublisher> motorDebugPublishers;
     nt::StringPublisher ArmEncoderPublisher;
 
-        // https://www.revrobotics.com/rev-11-1271/
+    // https://www.revrobotics.com/rev-11-1271/
     rev::SparkMaxAlternateEncoder m_armMotorEncoder = m_armMotor.GetAlternateEncoder(
       rev::SparkMaxAlternateEncoder::Type::kQuadrature, 8192);
+    rev::SparkMaxRelativeEncoder m_wristMotorEncoder = m_wristMotor.GetEncoder();
 
     Arm m_arm {&m_armMotorEncoder};
+    Wrist m_wrist {&m_wristMotorEncoder};
 
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {
@@ -495,33 +512,6 @@ private:
       output << "Position: " << m_armMotorEncoder.GetPosition() << ", ";
       output << "Velocity: " << m_armMotorEncoder.GetVelocity() << ", ";
       ArmEncoderPublisher.Set(output.str());
-    }
-
-    void toggleAprilTagMode() {
-      m_useAprilTagsPID = !m_useAprilTagsPID;
-      if (m_useAprilTagsPID) {
-        // Disable ReflectiveTape mode
-        m_useReflectivePID = false;
-        // Disable Driver mode to enable pipeline processing
-        m_cameraAimer.disableDriverVisionMicrosoft();
-      } else {
-        // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
-        m_cameraAimer.enableDriverVisionMicrosoft();
-      }
-    }
-
-    void toggleReflectiveTapeMode() {
-      m_useReflectivePID = !m_useReflectivePID;
-
-      if (m_useReflectivePID) {
-        // Disable AprilTag mode
-        m_useAprilTagsPID = false;
-        // Disable Driver mode to enable pipeline processing
-        m_cameraAimer.disableDriverVisionLimelight();
-      } else {
-        // Enable Driver mode to give us a smoother live feed while we're not looking for vision targets
-        m_cameraAimer.enableDriverVisionLimelight();
-      } 
     }
 
     void releaseParkingBrake() {
@@ -628,9 +618,7 @@ private:
       std::time_t nowTime = std::chrono::system_clock::to_time_t(now);
       publishTimestamp.Set(std::ctime(&nowTime));
 
-      frc::SmartDashboard::PutNumber("ArmGoal", m_arm.GetGoal());
       frc::SmartDashboard::PutNumber("ArmPositionEncoder", m_arm.GetEncoderPosition());
-      frc::SmartDashboard::PutNumber("ArmPositionDegrees", m_arm.GetPosition());
 
       frc::SmartDashboard::PutBoolean("DigitDisplayA", m_digitBoard.GetButtonA());
       frc::SmartDashboard::PutBoolean("DigitDisplayB", m_digitBoard.GetButtonA());

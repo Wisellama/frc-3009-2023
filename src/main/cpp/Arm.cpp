@@ -3,63 +3,37 @@
 #include <algorithm>
 #include <cmath>
 
-Arm::Arm(rev::SparkMaxAlternateEncoder *encoder) {
-    m_encoder = encoder;
+#include <rev/RelativeEncoder.h>
 
-    // Multiply our position values by some factor.
-    // By default, the position value is in "rotations", so 1.0 would be a full 360 degrees.
-    // If we multiply by 360, we would get degrees.
-    // Alternatively you could multiply by M_PI to get radians.
-    // m_encoder->SetPositionConversionFactor(360);
+#include "FeedbackController.h"
+
+Arm::Arm(rev::RelativeEncoder *encoder) {
+    m_feedbackController = new FeedbackController(encoder);
 }
 
-void Arm::ResetGoal() {
-    // Reset the arm goal to the current position
-    m_goal = m_encoder->GetPosition();
+Arm::~Arm() {
+    delete m_feedbackController;
 }
 
 void Arm::MoveGoal(double move) {
-    m_goal += move;
+    m_feedbackController->MoveGoal(move);
 }
 
-double Arm::GetGoal() {
-    return m_goal;
-}
-
-void Arm::limitGoal() {
-    double min = EncoderLowerLimit();
-    double max = EncoderUpperLimit();
-
-    m_goal = std::clamp(m_goal, min, max);
+void Arm::ResetGoal() {
+    m_feedbackController->ResetGoal();
 }
 
 double Arm::CalculateMove() {
-    double move = 0.0;
-
-    // Make sure we clamp the goal to our physical arm limits
-    limitGoal();
-
-    // Get the current arm position from the encoder
-    m_position = GetEncoderPosition();
-
-    // Figure out how far off we are from reaching the goal
-    double diff = m_position - m_goal;
-
-    // If we're close enough, don't move
-    if (std::abs(diff) < kMinimumMove) {
-      return 0.0;
+    if (!m_ignorelimits) {
+        m_feedbackController->ClampGoal(EncoderLowerLimit(), EncoderUpperLimit());
     }
 
-    move = diff * kMoveBoost;
-
-    // If we're going up, add in some additional push to counteract gravity based on the arm's angle.
-    if (diff > 0) {
-        double armAngle = EncoderToDegrees(m_position);
-        double gravityOffset = std::sin(armAngle) * kGravityOffset;
-        move += gravityOffset;
+    double move = m_feedbackController->CalculateMove();
+    if (std::abs(move) < kMinimumMove) {
+        return 0.0;
     }
 
-    return move;
+    return move*kMoveBoost;
 }
 
 void Arm::SetExtended() {
@@ -76,10 +50,6 @@ void Arm::ToggleExtended() {
 
 bool Arm::GetExtendedState() {
     return m_extended;
-}
-
-double Arm::GetPosition() {
-    return m_encoder->GetPosition();
 }
 
 double Arm::EncoderLowerLimit() {
@@ -105,3 +75,7 @@ double Arm::DegreesToEncoder(double angle) {
 double Arm::EncoderToDegrees(double value) {
     return value * kDegreesToEncoderRatio;
 }
+
+ void Arm::ToggleLimits(){
+    m_ignorelimits = !m_ignorelimits;
+ }

@@ -151,4 +151,9 @@ bool Controls::ClawPressure() {
 
     return c->GetXButtonPressed();
 }    
-    
+
+bool Controls::ToggleLimits(){
+    frc::XboxController *c = m_controller2;
+
+    return c->GetRightStickButtonPressed();
+}
