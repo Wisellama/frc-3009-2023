@@ -12,6 +12,7 @@
 
 #include "AutoAimResult.h"
 #include "AprilTagPositionEnum.h"
+#include "FeedbackController.h"
 
 class CameraAimer {
   nt::BooleanPublisher m_publishFacingBlue;
@@ -36,15 +37,8 @@ class CameraAimer {
   // How far from the target we want to be
   const units::meter_t ARM_LENGTH_FROM_CAMERA = 122_cm + 16_cm; // Camera is inset 16cm inside the robot, arm is almost full length outside the robot
 
-  const double LINEAR_P = 0.05;
-  const double LINEAR_D = 0.01;
-  frc2::PIDController m_forwardController{LINEAR_P, 0.0, LINEAR_D};
-
-  const double ANGULAR_P = 1.0;
-  const double ANGULAR_I = 0.0;
-  const double ANGULAR_D = 0.1;
-  frc2::PIDController m_turnController{ANGULAR_P, ANGULAR_I, ANGULAR_D};
-  frc2::PIDController m_turnControllerReflectiveTape{ANGULAR_P, ANGULAR_I, ANGULAR_D};
+  FeedbackController m_forwardController{};
+  FeedbackController m_turnController{};
 
   photonlib::PhotonCamera m_cameraMicrosoft{CAMERA_MICROSOFT};
   // FRC uses the north-west-up coordinate system, where x = forward, y = horizontal, z = vertical

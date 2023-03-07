@@ -1,23 +1,17 @@
 #pragma once
 
-#include <rev/RelativeEncoder.h>
-
 class FeedbackController {
     public:
-    FeedbackController(rev::RelativeEncoder *encoder);
+    FeedbackController();
     ~FeedbackController(){};
 
-    void ResetGoal();
+    void SetGoal(double position);
     void MoveGoal(double move);
     double GetGoal();
     void ClampGoal(double min, double max);
-    double CalculateMove();
-
-    double GetEncoderPosition();
+    double CalculateMove(double position);
 
     private:
     double m_goal = 0.0;
     double m_position = 0.0;
-    rev::RelativeEncoder *m_encoder;
-
 };

@@ -8,27 +8,26 @@
 #include "FeedbackController.h"
 
 Arm::Arm(rev::RelativeEncoder *encoder) {
-    m_feedbackController = new FeedbackController(encoder);
+    m_encoder = encoder;
 }
 
 Arm::~Arm() {
-    delete m_feedbackController;
 }
 
 void Arm::MoveGoal(double move) {
-    m_feedbackController->MoveGoal(move);
+    m_feedbackController.MoveGoal(move);
 }
 
 void Arm::ResetGoal() {
-    m_feedbackController->ResetGoal();
+    m_feedbackController.SetGoal(GetEncoderPosition());
 }
 
 double Arm::CalculateMove() {
     if (!m_ignorelimits) {
-        m_feedbackController->ClampGoal(EncoderLowerLimit(), EncoderUpperLimit());
+        m_feedbackController.ClampGoal(EncoderLowerLimit(), EncoderUpperLimit());
     }
 
-    double move = m_feedbackController->CalculateMove();
+    double move = m_feedbackController.CalculateMove(GetEncoderPosition());
     if (std::abs(move) < kMinimumMove) {
         return 0.0;
     }
@@ -78,4 +77,8 @@ double Arm::EncoderToDegrees(double value) {
 
  void Arm::ToggleLimits(){
     m_ignorelimits = !m_ignorelimits;
+ }
+
+ bool Arm::GetIgnoreLimits() {
+    return m_ignorelimits;
  }

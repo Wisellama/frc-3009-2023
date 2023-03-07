@@ -7,11 +7,11 @@ DigitMXPDisplay::~DigitMXPDisplay() {
 }
 
 bool DigitMXPDisplay::GetButtonA() {
-    return m_buttonA.Get();
+    return !m_buttonA.Get();
 }
 
 bool DigitMXPDisplay::GetButtonB() {
-    return m_buttonB.Get();
+    return !m_buttonB.Get();
 }
 
 double DigitMXPDisplay::GetPot() {

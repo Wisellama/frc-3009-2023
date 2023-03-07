@@ -14,7 +14,7 @@ class DigitMXPDisplay {
     double GetPot();
 
     private:
-    frc::DigitalInput m_buttonA {9};
-    frc::DigitalInput m_buttonB {10};
+    frc::DigitalInput m_buttonA {19};
+    frc::DigitalInput m_buttonB {20};
     frc::AnalogInput m_potentiometer{3};    
 };

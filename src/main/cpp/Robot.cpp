@@ -91,7 +91,11 @@ public:
     closeClaw();
     raiseWheels();
     resetEncoders();
-    lightClawPressure();
+    heavyClawPressure();
+
+    // Reset the feedback controllers
+    m_arm.ResetGoal();
+    m_wrist.ResetGoal();
 
     auto inst = nt::NetworkTableInstance::GetDefault();
     auto accelerometerTable = inst.GetTable("accelerometer");
@@ -170,6 +174,10 @@ public:
     m_armDirectDrive = false;
     m_cameraAimer.enableDriverVisionMicrosoft();
     m_cameraAimer.enableDriverVisionLimelight();
+
+    // Reset the feedback controllers
+    m_arm.ResetGoal();
+    m_wrist.ResetGoal();
 
     raiseWheels();
   }
@@ -263,10 +271,9 @@ public:
     
 
     // Move the arm using controller triggers
-    double armRaise = m_controls.ArmRaise();
+    double armInput = m_controls.ArmRaise();
 
-    double armSpeed = 0.0;
-    double maxArmOutput = 1.0;
+    double armMove = 0.0;
 
     // Toggle arm PID mode
     if (m_controls.DirectDriveArm()) {
@@ -275,30 +282,33 @@ public:
     }
 
     if (m_armDirectDrive) {
-      armSpeed = armRaise * 0.4;
+      armMove = armInput * 0.4;
     } else {
       // The controller will give us values from -1 to 1, so move about 1 degree per cycle
-      double encoderMove = m_arm.DegreesToEncoder(armRaise);
+      double encoderMove = m_arm.DegreesToEncoder(armInput);
       encoderMove = -1 * encoderMove;
       m_arm.MoveGoal(encoderMove);
       double move = m_arm.CalculateMove();
-      armSpeed = move;
+      armMove = move;
     }
 
-    frc::SmartDashboard::PutNumber("ArmSpeed", armSpeed);
-
-    armSpeed = std::clamp(armSpeed, -1 * maxArmOutput, maxArmOutput);
-    m_armMotor.Set(armSpeed);
+    double maxArmOutput = kFullSpeed;
+    armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
+    m_armMotor.Set(armMove);
 
     double maxWristOutput = kHalfSpeed;
-    double wristSpeed = m_controls.Wrist();
-    m_wrist.MoveGoal(wristSpeed);
+    double wristInput = m_controls.Wrist();
 
-    double wristMove = m_wrist.CalculateMove();
-    if (std::abs(wristMove) > 0.01) {
+    double wristMove = 0.0;
+    if (false) { // TODO if we want to try wrist stability with the feedback controller
+      // Actually, I don't think this will work because the motor slips a lot which would screw up the encoder position.
+      double wristEncoderMove = m_wrist.DegreesToEncoder(wristInput);
+      m_wrist.MoveGoal(wristEncoderMove);
+
+      wristMove = m_wrist.CalculateMove();
       wristMove = std::clamp(wristMove, -1 * maxWristOutput, maxWristOutput);
     } else {
-      wristMove = 0;
+      wristMove = wristInput;
     }
 
     m_wristMotor.Set(wristMove);
@@ -392,7 +402,7 @@ private:
   static constexpr int kWristChannel = 10;
   static constexpr int kPnuematics = 50;
   static constexpr int kPDP = 51;
-  static constexpr int kPidgeonIMU = 52; // TODO set this up on the can network
+  static constexpr int kPidgeonIMU = 52;
 
   static constexpr int kXboxPort1 = 0;
   static constexpr int kXboxPort2 = 1;
@@ -612,6 +622,8 @@ private:
       frc::SmartDashboard::PutBoolean("WheelsDown", m_wheelsDown);
       frc::SmartDashboard::PutBoolean("ArmExtended", m_arm.GetExtendedState());
       frc::SmartDashboard::PutBoolean("ClawClosed", m_clawClosed);
+      frc::SmartDashboard::PutBoolean("ArmIgnoreLimits", m_arm.GetIgnoreLimits());
+      frc::SmartDashboard::PutBoolean("HeavyClawPressure", m_clawPressureHigh);
       frc::SmartDashboard::PutString("RobotPose", poseStr.str());
 
       auto now = std::chrono::system_clock::now();
@@ -619,15 +631,16 @@ private:
       publishTimestamp.Set(std::ctime(&nowTime));
 
       frc::SmartDashboard::PutNumber("ArmPositionEncoder", m_arm.GetEncoderPosition());
+      frc::SmartDashboard::PutNumber("WristPositionEncoder", m_wrist.GetEncoderPosition());
 
       frc::SmartDashboard::PutBoolean("DigitDisplayA", m_digitBoard.GetButtonA());
-      frc::SmartDashboard::PutBoolean("DigitDisplayB", m_digitBoard.GetButtonA());
+      frc::SmartDashboard::PutBoolean("DigitDisplayB", m_digitBoard.GetButtonB());
       frc::SmartDashboard::PutNumber("DigitDisplayPot", m_digitBoard.GetPot());
-
     }
 
     void resetEncoders() {
       m_armMotorEncoder.SetPosition(0);
+      m_wristMotorEncoder.SetPosition(0);
     }
 
 

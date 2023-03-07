@@ -1,24 +1,14 @@
 #include <photonlib/PhotonUtils.h>
 
+#include <frc/smartdashboard/SmartDashboard.h>
+
 #include "CameraAimer.h"
 #include "AutoAimResult.h"
 #include "AprilTagPositionEnum.h"
 #include "AprilTagHelpers.h"
+#include "FeedbackController.h"
 
 CameraAimer::CameraAimer() {
-  auto inst = nt::NetworkTableInstance::GetDefault();
-  auto table = inst.GetTable("CameraAimer");
-  m_publishFacingBlue = table->GetBooleanTopic("FacingBlue").Publish();
-  m_publishFacingRed = table->GetBooleanTopic("FacingRed").Publish();
-  m_publishBestTargetId = table->GetIntegerTopic("BestTargetId").Publish();
-  m_publishTargetYaw = table->GetDoubleTopic("TargetYaw").Publish();
-  m_publishReflectiveYaw = table->GetDoubleTopic("ReflectiveYaw").Publish();
-  m_publishRotation = table->GetDoubleTopic("Rotation").Publish();
-  m_publishForwardSpeed = table->GetDoubleTopic("ForwardSpeed").Publish();
-  m_publishRange = table->GetDoubleTopic("Range").Publish();
-
-  m_publishTargetYaw.Set(99.88);
-  m_publishReflectiveYaw.Set(99.88);
 }
 
 AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
@@ -44,29 +34,37 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
       bool facingBlue = lookingAtBlueCommunity(aprilTagsFound);
       bool facingRed = lookingAtRedCommunity(aprilTagsFound);
 
-      m_publishFacingBlue.Set(facingBlue);
-      m_publishFacingRed.Set(facingRed);
-      m_publishBestTargetId.Set(fiducialId);
+      frc::SmartDashboard::PutBoolean("FacingBlue", facingBlue);
+      frc::SmartDashboard::PutBoolean("FacingRed", facingRed);
+      frc::SmartDashboard::PutNumber("TargetId", fiducialId);
 
-      // First calculate range
+      // First calculate range for forward movement
       units::meter_t range = photonlib::PhotonUtils::CalculateDistanceToTarget(
           m_translationAprilTags.Z(), APRIL_TAG_HEIGHT, m_rotation.Y(),
           units::degree_t{result.GetBestTarget().GetPitch()});
 
-      // Use this range as the measurement we give to the PID controller.
-      // -1.0 required to ensure positive PID controller effort _increases_ range
-      forwardSpeed = -1 * m_forwardController.Calculate(range.value(), ARM_LENGTH_FROM_CAMERA.value());
-      m_publishRange.Set(range.value());
-      m_publishForwardSpeed.Set(forwardSpeed);
+      // Then set our goal to how far away we want to be
+      m_forwardController.SetGoal(double(ARM_LENGTH_FROM_CAMERA));
 
-      // Also calculate angular power
-      // -1.0 required to ensure positive PID controller effort _increases_ yaw
-      m_publishTargetYaw.Set(result.GetBestTarget().GetYaw());
-      rotationSpeed = -1 * m_turnController.Calculate(result.GetBestTarget().GetYaw(), 0);
-      m_publishRotation.Set(rotationSpeed);
+      // Then use the goal and range with the feedback controller to determine how much we need to move.
+      forwardSpeed = m_forwardController.CalculateMove(double(range));
+      frc::SmartDashboard::PutNumber("AprilTagRange", double(range));
+      frc::SmartDashboard::PutNumber("AprilTagForwardSpeed", forwardSpeed);
+
+      // First get our yaw
+      double yaw = result.GetBestTarget().GetYaw();
+
+      // Then set our goal (of zero, we just want to line up with the target)
+      m_turnController.SetGoal(0);
+
+      // Then use the goal and yaw with the feedback controller to determine how much we need to move.
+      rotationSpeed = m_turnController.CalculateMove(yaw);
+      frc::SmartDashboard::PutNumber("RotationSpeed", rotationSpeed);
+      frc::SmartDashboard::PutNumber("Yaw", yaw);
     }
 
-    forwardSpeed = 0; // TODO Don't trust the values yet
+    forwardSpeed = 0; // TODO Don't trust the values yet, just print them out first
+    rotationSpeed = 0;
     AutoAimResult output {forwardSpeed, rotationSpeed};
     return output;
 }
@@ -76,12 +74,18 @@ AutoAimResult CameraAimer::AutoAimReflectiveTape() {
   double rotationSpeed = 0.0;
 
   if (result.HasTargets()) {
-    m_publishReflectiveYaw.Set(result.GetBestTarget().GetYaw());
-    rotationSpeed = -1 * m_turnControllerReflectiveTape.Calculate(result.GetBestTarget().GetYaw(), 0);
+    double yaw = result.GetBestTarget().GetYaw();
+    m_turnController.SetGoal(0);
+    rotationSpeed = m_turnController.CalculateMove(yaw);
+    frc::SmartDashboard::PutNumber("RotationSpeed", rotationSpeed);
+    frc::SmartDashboard::PutNumber("Yaw", yaw);
   }
 
+  // TODO don't trust the values yet, just print them out first
+  rotationSpeed = 0;
+
   AutoAimResult output {0, rotationSpeed};
-    return output;
+  return output;
 }
 
 std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
