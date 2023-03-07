@@ -12,9 +12,14 @@ class DigitMXPDisplay {
     bool GetButtonA();
     bool GetButtonB();
     double GetPot();
+    void Write(int registerAddress, uint8_t data);
+    void InitDisplays();
+    void Test();
 
     private:
     frc::DigitalInput m_buttonA {19};
     frc::DigitalInput m_buttonB {20};
-    frc::AnalogInput m_potentiometer{3};    
+    frc::AnalogInput m_potentiometer{3};
+
+    frc::I2C m_i2c{frc::I2C::kMXP, 0b01110000};
 };

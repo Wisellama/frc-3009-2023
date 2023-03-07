@@ -19,6 +19,7 @@
 #include <frc/controller/ArmFeedforward.h>
 #include <frc/smartdashboard/SmartDashboard.h>
 #include <frc/I2C.h>
+
 #include <cameraserver/CameraServer.h>
 
 #include <networktables/DoubleTopic.h>
@@ -28,6 +29,8 @@
 #include <networktables/NetworkTableValue.h>
 
 #include <rev/CANSparkMax.h>
+
+#include <ctre/phoenix/sensors/Pigeon2.h>
 
 #include "CameraAimer.h"
 #include "Controls.h"
@@ -59,6 +62,8 @@ public:
   void RobotInit() override {
     // Initialize the gyro/imu
     //m_imu.Calibrate();
+
+    m_digitBoard.Test();
 
     // Start Arm-mounted camera connected directly to roborio
     frc::CameraServer::StartAutomaticCapture();
@@ -477,6 +482,8 @@ private:
 
   DigitMXPDisplay m_digitBoard {};
 
+  ctre::phoenix::sensors::Pigeon2 m_pigeon{kPidgeonIMU};
+
   // A list of all the spark motors so we can conveniently loop through them.
   std::vector<rev::CANSparkMax*> sparkMotors = {
       &m_frontRight,
@@ -636,6 +643,10 @@ private:
       frc::SmartDashboard::PutBoolean("DigitDisplayA", m_digitBoard.GetButtonA());
       frc::SmartDashboard::PutBoolean("DigitDisplayB", m_digitBoard.GetButtonB());
       frc::SmartDashboard::PutNumber("DigitDisplayPot", m_digitBoard.GetPot());
+
+      frc::SmartDashboard::PutNumber("GyroYaw", m_pigeon.GetYaw());
+      frc::SmartDashboard::PutNumber("GyroPitch", m_pigeon.GetPitch());
+      frc::SmartDashboard::PutNumber("GyroRoll", m_pigeon.GetRoll());
     }
 
     void resetEncoders() {
