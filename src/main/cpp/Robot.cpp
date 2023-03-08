@@ -4,6 +4,8 @@
 
 #include <ctime>
 #include <iostream>
+#include <chrono>
+#include <thread>
 
 #include <frc/Joystick.h>
 #include <frc/TimedRobot.h>
@@ -62,6 +64,9 @@ public:
   void RobotInit() override {
     // Initialize the gyro/imu
     //m_imu.Calibrate();
+
+    // An example of sleeping for 5 milliseconds (1000ms = 1 second)
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     m_digitBoard.Test();
 
@@ -311,10 +316,11 @@ public:
       m_wrist.MoveGoal(wristEncoderMove);
 
       wristMove = m_wrist.CalculateMove();
-      wristMove = std::clamp(wristMove, -1 * maxWristOutput, maxWristOutput);
     } else {
       wristMove = wristInput;
     }
+
+    wristMove = std::clamp(wristMove, -1 * maxWristOutput, maxWristOutput);
 
     m_wristMotor.Set(wristMove);
 
@@ -387,6 +393,67 @@ public:
     // drive out over charging station perhaps?
     // ???
     // balance if going to balance
+
+    for(auto motor :sparkMotors){
+      motor->Set(0);
+    }
+
+m_robotDrive.DriveCartesian(0, 0, 0);
+
+   m_arm.SetGoal(Arm::kEncoderUpperLimit);
+  double armMove = m_arm.CalculateMove();
+  double maxArmOutput = kHalfSpeed;
+  armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
+  m_armMotor.Set(armMove);
+bool armIsUp = m_arm.GetEncoderPosition() >= Arm::kEncoderUpperLimit - 0.1;
+frc::SmartDashboard::PutBoolean("arm is up", armIsUp);
+    std::cout << "running" << std::endl;
+if (armIsUp)
+{
+    std::cout << "armIsUp" << std::endl;
+  extendArm();
+   wristWait += 1;
+   if(wristWait >= 100 ){//arm is extended and set to its own variable//
+    wristWait = 100;
+    m_wristMotor.Set(.2);
+    clawWait += 1;
+   }
+  if(clawWait >= 150){//wrist is rotated down and make own variable//
+  clawWait = 150;
+  openClaw();
+  m_wristMotor.Set(0);
+  gamepieceWait += 1;
+  }
+  if(gamepieceWait >= 100){//game piece dropped out of claw//
+  gamepieceWait = 100;
+m_wristMotor.Set(-0.3);
+  armIn += 1;
+  }
+  if(armIn >= 150){//wrist is up//
+    armIn = 150;
+    retractArm();
+    m_wristMotor.Set(0);
+    closeClaw();
+    armDown += 1;
+  }
+if(armDown >= 100){
+m_arm.SetGoal(Arm::kEncoderUpperLimit);
+  double armMove = m_arm.CalculateMove();
+  double maxArmOutput = kHalfSpeed;
+  armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
+  m_armMotor.Set(armMove);
+  bool armisDown = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.05;
+}
+
+
+
+
+
+
+
+
+}
+
   }
 
   void AutonomousExit() override {
@@ -477,13 +544,18 @@ private:
   double kFullSpeed = 1.0;
   double kThreeQuartSpeed = 0.75;
   double kHalfSpeed = 0.5;
+  double kQuarterSpeed = 0.25;
 
   frc::Pose3d m_robotPose {};
 
   DigitMXPDisplay m_digitBoard {};
 
   ctre::phoenix::sensors::Pigeon2 m_pigeon{kPidgeonIMU};
-
+int wristWait = 0;
+int clawWait = 0;
+int gamepieceWait = 0;
+int armIn = 0;
+int armDown = 0;
   // A list of all the spark motors so we can conveniently loop through them.
   std::vector<rev::CANSparkMax*> sparkMotors = {
       &m_frontRight,

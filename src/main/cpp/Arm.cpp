@@ -17,7 +17,9 @@ Arm::~Arm() {
 void Arm::MoveGoal(double move) {
     m_feedbackController.MoveGoal(move);
 }
-
+void Arm::SetGoal(double move) {
+    m_feedbackController.SetGoal(move);
+}
 void Arm::ResetGoal() {
     m_feedbackController.SetGoal(GetEncoderPosition());
 }
