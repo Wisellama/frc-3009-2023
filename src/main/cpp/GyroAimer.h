@@ -1,11 +1,11 @@
 #pragma once
 
-#include <frc/ADIS16448_IMU.h>
+#include <ctre/phoenix/sensors/Pigeon2.h>
 #include <frc/controller/PIDController.h>
 
 class GyroAimer {
     private:
-    frc::ADIS16448_IMU *m_imu;
+    ctre::phoenix::sensors::Pigeon2 *m_pigeon;
 
     const double GYRO_AIMER_P = 1.0;
     const double GYRO_AIMER_I = 0.0;
@@ -13,7 +13,7 @@ class GyroAimer {
     frc::PIDController m_pid{GYRO_AIMER_P, GYRO_AIMER_I, GYRO_AIMER_D};
 
     public:
-    GyroAimer(frc::ADIS16448_IMU *imu);
+    GyroAimer(ctre::phoenix::sensors::Pigeon2 *pigeon);
     ~GyroAimer() {};
 
     double CalculateMove(double goal);

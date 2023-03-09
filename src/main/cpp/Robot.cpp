@@ -241,8 +241,7 @@ public:
       forward = m_controls.DriveForward();
       
       if (m_controls.FaceGrid()) {
-        m_rotateFeedbackController.SetGoal(-90);
-        rotate = std::clamp(m_rotateFeedbackController.CalculateMove(m_pigeon.GetYaw()), -0.5, 0.5);
+        rotate = std::clamp(m_gyroAimer.CalculateToFaceStartingAngle(), -0.5, 0.5);
         frc::SmartDashboard::PutNumber("FaceGridGyroAimer", rotate);
       } else {
         rotate = m_controls.DriveRotate();
@@ -590,7 +589,7 @@ int armDown = 0;
 
     Arm m_arm {&m_armMotorEncoder};
     Wrist m_wrist {&m_wristMotorEncoder};
-    FeedbackController m_rotateFeedbackController {};
+    GyroAimer m_gyroAimer {&m_pigeon};
 
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {
