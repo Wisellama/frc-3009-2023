@@ -22,5 +22,5 @@ double GyroAimer::CalculateToFaceStartingAngle() {
     double current = m_imu->GetAngle().value();
     goal = std::floor(current / 360.0) + goal;
 
-    return std::clamp(m_pid.Calculate(current, goal), 0.0, 1.0);
+    return std::clamp(m_pid.Calculate(current, goal), -1.0, 1.0);
 }

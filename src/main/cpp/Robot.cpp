@@ -40,6 +40,7 @@
 #include "DigitMXPDisplay.h"
 #include "Wrist.h"
 #include "GyroAimer.h"
+#include "FeedbackController.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -64,7 +65,7 @@ public:
   // This runs exactly once on robot power on
   void RobotInit() override {
     // Initialize the gyro/imu
-    m_imu.Calibrate();
+    // m_imu.Calibrate();
 
     // An example of sleeping for 5 milliseconds (1000ms = 1 second)
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -155,8 +156,8 @@ public:
     double distance = m_ultrasonic.Get();
     publishDistanceRaw.Set(distance);
 
-    units::degree_t angle = m_imu.GetAngle();
-    publishAngle.Set(angle.value());
+    // units::degree_t angle = m_imu.GetAngle();
+    // publishAngle.Set(angle.value());
 
     distance = distance * kSonicScale; // convert to meters
 
@@ -240,7 +241,9 @@ public:
       forward = m_controls.DriveForward();
       
       if (m_controls.FaceGrid()) {
-        rotate = m_gyroAimer.CalculateToFaceStartingAngle();
+        m_rotateFeedbackController.SetGoal(-90);
+        rotate = std::clamp(m_rotateFeedbackController.CalculateMove(m_pigeon.GetYaw()), -0.5, 0.5);
+        frc::SmartDashboard::PutNumber("FaceGridGyroAimer", rotate);
       } else {
         rotate = m_controls.DriveRotate();
       }
@@ -526,7 +529,7 @@ private:
   Controls m_controls {kXboxPort1, kXboxPort2, kDeadband};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
-  frc::ADIS16448_IMU m_imu{};
+  // frc::ADIS16448_IMU m_imu{};
 
   frc::BuiltInAccelerometer m_accelerometer{};
 
@@ -587,7 +590,7 @@ int armDown = 0;
 
     Arm m_arm {&m_armMotorEncoder};
     Wrist m_wrist {&m_wristMotorEncoder};
-    GyroAimer m_gyroAimer {&m_imu};
+    FeedbackController m_rotateFeedbackController {};
 
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {

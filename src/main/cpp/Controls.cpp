@@ -161,5 +161,5 @@ bool Controls::ToggleLimits(){
 bool Controls::FaceGrid(){
     frc::XboxController *c = m_controller1;
 
-    return c->GetRightBumperPressed();
+    return c->GetRightTriggerAxis() > 0.5;
 }
