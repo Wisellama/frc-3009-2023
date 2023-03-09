@@ -63,7 +63,7 @@ public:
   // This runs exactly once on robot power on
   void RobotInit() override {
     // Initialize the gyro/imu
-    //m_imu.Calibrate();
+    m_imu.Calibrate();
 
     // An example of sleeping for 5 milliseconds (1000ms = 1 second)
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
@@ -154,8 +154,8 @@ public:
     double distance = m_ultrasonic.Get();
     publishDistanceRaw.Set(distance);
 
-    //units::degree_t angle = m_imu.GetAngle();
-    //publishAngle.Set(angle.value());
+    units::degree_t angle = m_imu.GetAngle();
+    publishAngle.Set(angle.value());
 
     distance = distance * kSonicScale; // convert to meters
 
@@ -398,9 +398,9 @@ public:
       motor->Set(0);
     }
 
-m_robotDrive.DriveCartesian(0, 0, 0);
+  m_robotDrive.DriveCartesian(0, 0, 0);
 
-   m_arm.SetGoal(Arm::kEncoderUpperLimit);
+  m_arm.SetGoal(Arm::kEncoderUpperLimit);
   double armMove = m_arm.CalculateMove();
   double maxArmOutput = kHalfSpeed;
   armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
@@ -520,7 +520,7 @@ private:
   Controls m_controls {kXboxPort1, kXboxPort2, kDeadband};
 
   // https://wiki.analog.com/first/adis16448_imu_frc/cpp
-  //frc::ADIS16448_IMU m_imu{};
+  frc::ADIS16448_IMU m_imu{};
 
   frc::BuiltInAccelerometer m_accelerometer{};
 
@@ -685,6 +685,39 @@ int armDown = 0;
       m_solenoidClawPressure.Set(frc::DoubleSolenoid::kForward);
       m_clawPressureHigh = true;
     }
+
+
+    void handleArmForInside() {
+      retractArm();
+      // close claw incase it's holding something
+      closeClaw();
+    }
+    void handleArmForCollecting() {
+      // move arm out far enough so it can pick things up
+      // maybe let it move a little but clamp it? prevent driver from bringing the claw higher than it should be
+    }
+
+    void handleArmForLowGoal() {
+       closeClaw();
+    }
+    void handleArmForMiddleCone() {
+       closeClaw();
+    }
+    void handleArmForMiddleCube() {
+       closeClaw();
+    }
+    void handleArmForHighCone() {
+       closeClaw();
+    }
+    void handleArmForHighCube() {
+       closeClaw();
+    }
+
+    void handleReleasing() {
+        openClaw();
+    }
+
+
 
     void publishRobotState() {
     

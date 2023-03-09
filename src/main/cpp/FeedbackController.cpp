@@ -27,3 +27,8 @@ double FeedbackController::CalculateMove(double position) {
 
     return diff;
 }
+
+// maybe has issues if it overshoots goal and triggers for a little bit
+// bool FeedbackController::NearGoal(double position, double margin = 2) {
+//     return std::abs(position - m_goal) <= margin;
+// }
