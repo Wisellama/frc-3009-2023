@@ -26,6 +26,8 @@ class Controls {
     bool ClawPressure();
     bool ToggleLimits();
 
+    bool FaceGrid();
+
     private:
     frc::XboxController *m_controller1;
     frc::XboxController *m_controller2;

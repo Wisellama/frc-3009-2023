@@ -39,6 +39,7 @@
 #include "Arm.h"
 #include "DigitMXPDisplay.h"
 #include "Wrist.h"
+#include "GyroAimer.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -237,7 +238,12 @@ public:
       // Drive the robot based on controller input
       sideways = m_controls.DriveStrafe();
       forward = m_controls.DriveForward();
-      rotate = m_controls.DriveRotate();
+      
+      if (m_controls.FaceGrid()) {
+        rotate = m_gyroAimer.CalculateToFaceStartingAngle();
+      } else {
+        rotate = m_controls.DriveRotate();
+      }
       //units::degree_t a = m_imu.GetAngle();
 
       if (m_controls.Turbo()) {
@@ -581,6 +587,7 @@ int armDown = 0;
 
     Arm m_arm {&m_armMotorEncoder};
     Wrist m_wrist {&m_wristMotorEncoder};
+    GyroAimer m_gyroAimer {&m_imu};
 
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {

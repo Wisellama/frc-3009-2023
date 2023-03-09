@@ -157,3 +157,9 @@ bool Controls::ToggleLimits(){
 
     return c->GetRightStickButtonPressed();
 }
+
+bool Controls::FaceGrid(){
+    frc::XboxController *c = m_controller1;
+
+    return c->GetRightBumperPressed();
+}
