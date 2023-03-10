@@ -11,7 +11,6 @@
 #include <frc/TimedRobot.h>
 #include <frc/drive/MecanumDrive.h>
 #include <frc/drive/DifferentialDrive.h>
-#include <frc/ADIS16448_IMU.h>
 #include <frc/TimedRobot.h>
 #include <frc/BuiltInAccelerometer.h>
 #include <frc/AnalogPotentiometer.h>
@@ -64,9 +63,6 @@ public:
 
   // This runs exactly once on robot power on
   void RobotInit() override {
-    // Initialize the gyro/imu
-    // m_imu.Calibrate();
-
     // An example of sleeping for 5 milliseconds (1000ms = 1 second)
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
@@ -156,9 +152,6 @@ public:
     double distance = m_ultrasonic.Get();
     publishDistanceRaw.Set(distance);
 
-    // units::degree_t angle = m_imu.GetAngle();
-    // publishAngle.Set(angle.value());
-
     distance = distance * kSonicScale; // convert to meters
 
     if (distance < kSonicLimitLower) {
@@ -246,7 +239,6 @@ public:
       } else {
         rotate = m_controls.DriveRotate();
       }
-      //units::degree_t a = m_imu.GetAngle();
 
       if (m_controls.Turbo()) {
         m_robotDrive.SetMaxOutput(kThreeQuartSpeed);
@@ -402,66 +394,34 @@ public:
     // ???
     // balance if going to balance
 
+    // Set all motors to 0 to avoid watchdog complaints
     for(auto motor :sparkMotors){
       motor->Set(0);
     }
+    m_robotDrive.DriveCartesian(0, 0, 0);
 
-  m_robotDrive.DriveCartesian(0, 0, 0);
+    // Go through each AutonomousMode state and evaluate them one at a time.
+    if (!m_AutoStateRaiseArmComplete) {
+      AutoStateRaiseArm();
+    } else if (!m_AutoStateExtendArmComplete) {
+      AutoStateExtendArm();
+    } else if (!m_AutoStateLowerWristComplete) {
+      AutoStateLowerWrist();
+    } else if (!m_AutoStateOpenClawComplete) {
+      AutoStateOpenClaw();
+    } else if (!m_AutoStateRaiseWristComplete) {
+      AutoStateRaiseWrist();
+    } else if (!m_AutoStateRetractArmComplete) {
+      AutoStateRetractArm();
+    } else if (!m_AutoStateLowerArmComplete) {
+      AutoStateLowerArm();
+    }
 
-  m_arm.SetGoal(Arm::kEncoderUpperLimit);
-  double armMove = m_arm.CalculateMove();
-  double maxArmOutput = kHalfSpeed;
-  armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
-  m_armMotor.Set(armMove);
-bool armIsUp = m_arm.GetEncoderPosition() >= Arm::kEncoderUpperLimit - 0.1;
-frc::SmartDashboard::PutBoolean("arm is up", armIsUp);
-    std::cout << "running" << std::endl;
-if (armIsUp)
-{
-    std::cout << "armIsUp" << std::endl;
-  extendArm();
-   wristWait += 1;
-   if(wristWait >= 100 ){//arm is extended and set to its own variable//
-    wristWait = 100;
-    m_wristMotor.Set(.2);
-    clawWait += 1;
-   }
-  if(clawWait >= 150){//wrist is rotated down and make own variable//
-  clawWait = 150;
-  openClaw();
-  m_wristMotor.Set(0);
-  gamepieceWait += 1;
-  }
-  if(gamepieceWait >= 100){//game piece dropped out of claw//
-  gamepieceWait = 100;
-m_wristMotor.Set(-0.3);
-  armIn += 1;
-  }
-  if(armIn >= 150){//wrist is up//
-    armIn = 150;
-    retractArm();
-    m_wristMotor.Set(0);
-    closeClaw();
-    armDown += 1;
-  }
-if(armDown >= 100){
-m_arm.SetGoal(Arm::kEncoderUpperLimit);
-  double armMove = m_arm.CalculateMove();
-  double maxArmOutput = kHalfSpeed;
-  armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
-  m_armMotor.Set(armMove);
-  bool armisDown = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.05;
-}
-
-
-
-
-
-
-
-
-}
-
+    // Update the arm based on new goals from the autonomous mode functions
+    double armMove = m_arm.CalculateMove();
+    double maxArmOutput = kHalfSpeed;
+    armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
+    m_armMotor.Set(armMove);
   }
 
   void AutonomousExit() override {
@@ -559,11 +519,7 @@ private:
   DigitMXPDisplay m_digitBoard {};
 
   ctre::phoenix::sensors::Pigeon2 m_pigeon{kPidgeonIMU};
-int wristWait = 0;
-int clawWait = 0;
-int gamepieceWait = 0;
-int armIn = 0;
-int armDown = 0;
+
   // A list of all the spark motors so we can conveniently loop through them.
   std::vector<rev::CANSparkMax*> sparkMotors = {
       &m_frontRight,
@@ -577,7 +533,7 @@ int armDown = 0;
       &m_rearLeftFollow,
       &m_armMotor,
       &m_wristMotor,
-    };
+  };
 
     std::map<int, nt::StringPublisher> motorDebugPublishers;
     nt::StringPublisher ArmEncoderPublisher;
@@ -590,6 +546,8 @@ int armDown = 0;
     Arm m_arm {&m_armMotorEncoder};
     Wrist m_wrist {&m_wristMotorEncoder};
     GyroAimer m_gyroAimer {&m_pigeon};
+
+    AutoStateCounters m_autoStateCounters{};
 
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {
@@ -768,7 +726,84 @@ int armDown = 0;
       m_wristMotorEncoder.SetPosition(0);
     }
 
+    // Raise the arm up all the way up to the top
+    bool m_AutoStateRaiseArmComplete = false;
+    void AutoStateRaiseArm() {
+      if (m_AutoStateRaiseArmComplete) {
+        return;
+      }
 
+      m_arm.SetGoal(Arm::kEncoderUpperLimit);
+
+      // Check if it's done
+      m_AutoStateRaiseArmComplete = m_arm.GetEncoderPosition() >= Arm::kEncoderUpperLimit - 0.1;
+    }
+
+    // Extend the arm out
+    bool m_AutoStateExtendArmComplete = false;
+    void AutoStateExtendArm() {
+      if (m_AutoStateExtendArmComplete) {
+        return;
+      }
+      extendArm();
+      m_autoStateCounters.ExtendArm++;
+      m_AutoStateExtendArmComplete = m_autoStateCounters.ExtendArm >= 70;
+    }
+
+    // Rotate the wrist down
+    bool m_AutoStateLowerWristComplete = false;
+    void AutoStateLowerWrist() {
+      if (m_AutoStateLowerWristComplete) {
+        return;
+      }
+      m_wristMotor.Set(.2);
+      m_autoStateCounters.LowerWrist++;
+      m_AutoStateLowerWristComplete = m_autoStateCounters.LowerWrist >= 100;
+    }
+
+    // Open the claw to drop the game piece
+    bool m_AutoStateOpenClawComplete = false;
+    void AutoStateOpenClaw() {
+      if (m_AutoStateOpenClawComplete) {
+        return;
+      }
+      openClaw();
+      m_autoStateCounters.OpenClaw++;
+      m_AutoStateOpenClawComplete = m_autoStateCounters.OpenClaw >= 100;
+    }
+
+     // Rotate the wrist back up
+    bool m_AutoStateRaiseWristComplete = false;
+    void AutoStateRaiseWrist() {
+      if (m_AutoStateRaiseWristComplete) {
+        return;
+      }
+      m_wristMotor.Set(-0.3);
+      m_autoStateCounters.RaiseWrist++;
+      m_AutoStateRaiseWristComplete = m_autoStateCounters.RaiseWrist >= 100;
+    }
+
+    // Retract the arm and close the claw
+    bool m_AutoStateRetractArmComplete = false;
+    void AutoStateRetractArm() {
+      if (m_AutoStateRetractArmComplete) {
+        return;
+      }
+      retractArm();
+      closeClaw();
+      m_autoStateCounters.RetractArm++;
+      m_AutoStateRetractArmComplete = m_autoStateCounters.RetractArm >= 150;
+    }
+
+    // Lower the arm back inside the robot
+    bool m_AutoStateLowerArmComplete = false;
+    void AutoStateLowerArm() {
+      // Make sure the arm stays in and closed while we're lowering
+      retractArm();
+      closeClaw();
+      m_arm.SetGoal(Arm::kEncoderLowerLimit);
+      m_AutoStateLowerArmComplete = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.05;
+    }
 };
 
 #ifndef RUNNING_FRC_TESTS
