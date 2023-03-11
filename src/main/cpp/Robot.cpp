@@ -20,6 +20,8 @@
 #include <frc/controller/ArmFeedforward.h>
 #include <frc/smartdashboard/SmartDashboard.h>
 #include <frc/I2C.h>
+#include <frc/kinematics/MecanumDriveKinematics.h>
+#include <frc/kinematics/MecanumDriveOdometry.h>
 
 #include <cameraserver/CameraServer.h>
 
@@ -40,6 +42,7 @@
 #include "Wrist.h"
 #include "GyroAimer.h"
 #include "FeedbackController.h"
+#include "AutonomousState.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -65,8 +68,6 @@ public:
   void RobotInit() override {
     // An example of sleeping for 5 milliseconds (1000ms = 1 second)
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
-
-    m_digitBoard.Test();
 
     // Start Arm-mounted camera connected directly to roborio
     frc::CameraServer::StartAutomaticCapture();
@@ -143,7 +144,7 @@ public:
   void RobotPeriodic() override {
     m_compressor.EnableDigital();
 
-    //units::current::ampere_t compressorCurrent = m_compressor.GetCurrent();
+    //m_digitBoard.Test();
 
     accelerationX.Set(m_accelerationXFilter.Calculate(m_accelerometer.GetX()));
     accelerationY.Set(m_accelerationYFilter.Calculate(m_accelerometer.GetY()));
@@ -168,17 +169,20 @@ public:
     AutoAimResult ignore = m_cameraAimer.AutoAimAprilTags(-1);
     AutoAimResult ignore2 = m_cameraAimer.AutoAimReflectiveTape();
 
-    // std::shared_ptr<nt::NetworkTable> table = nt::NetworkTableInstance::GetDefault().GetTable("limelight");
-    // double targetOffsetAngle_Horizontal = table->GetNumber("tx",0.0);
-    // double targetOffsetAngle_Vertical = table->GetNumber("ty",0.0);
-    // double targetArea = table->GetNumber("ta",0.0);
-    // double targetSkew = table->GetNumber("ts",0.0);
+    m_robotPose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
+
+    frc::Pose3d zero {};
+    frc::Pose3d goal {};
+    frc::Transform3d diff = goal - m_robotPose;
+    frc::SmartDashboard::PutString("PoseGoalDiff", PoseToStr(zero.TransformBy(diff)));
   }
 
   void TeleopInit() override {
     m_armDirectDrive = false;
-    m_cameraAimer.enableDriverVisionMicrosoft();
-    m_cameraAimer.enableDriverVisionLimelight();
+
+    m_cameraAimer.SetAprilTagMode();
+    //m_cameraAimer.enableDriverVisionMicrosoft();
+    //m_cameraAimer.enableDriverVisionLimelight();
 
     // Reset the feedback controllers
     m_arm.ResetGoal();
@@ -206,29 +210,18 @@ public:
 
     if (m_cameraAimer.GetAprilTagMode()) {
       // Drive the robot based on camera targeting
-      AutoAimResult result = m_cameraAimer.AutoAimAprilTags(-1);
-      forward = result.GetForwardSpeed();
-      forward = forward * 0.01;
-      rotate = result.GetRotationSpeed();
-      rotate = rotate / 100.0;
-
-      auto pose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
-      if (pose.has_value()) {
-        m_robotPose = pose.value().estimatedPose;
-        //auto a = m_robotPose - m_robotPose;
-
-      }
-
+      //AutoAimResult result = m_cameraAimer.AutoAimAprilTags(-1);
+      //forward = result.GetForwardSpeed();
+      //forward = forward * 0.01;
+      //rotate = result.GetRotationSpeed();
+      //rotate = rotate / 100.0;
       // Just manually drive
-      forward = m_controls.DriveForward();
-    } else if (m_cameraAimer.GetReflectiveTapeMode()) {
-      AutoAimResult result = m_cameraAimer.AutoAimReflectiveTape();
-      rotate = result.GetRotationSpeed();
-      rotate = rotate / 100.0;
+      //forward = m_controls.DriveForward();
 
-      // Manually drive forward
-      forward = m_controls.DriveForward();
-    } else {
+      m_robotPose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
+    }
+
+    if (true) {
       // Drive the robot based on controller input
       sideways = m_controls.DriveStrafe();
       forward = m_controls.DriveForward();

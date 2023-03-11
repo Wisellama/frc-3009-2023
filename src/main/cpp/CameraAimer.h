@@ -14,6 +14,8 @@
 #include "AprilTagPositionEnum.h"
 #include "FeedbackController.h"
 
+std::string PoseToStr(frc::Pose3d pos);
+
 class CameraAimer {
   nt::BooleanPublisher m_publishFacingBlue;
   nt::BooleanPublisher m_publishFacingRed;
@@ -32,7 +34,7 @@ class CameraAimer {
   const int PIPELINE_REFLECTIVETAPE = 1;
   const int PIPELINE_COLORS = 2;
 
-  const units::meter_t APRIL_TAG_HEIGHT = 36_cm;
+  const units::meter_t APRIL_TAG_HEIGHT = 42_cm;
 
   // How far from the target we want to be
   const units::meter_t ARM_LENGTH_FROM_CAMERA = 122_cm + 16_cm; // Camera is inset 16cm inside the robot, arm is almost full length outside the robot
@@ -42,24 +44,28 @@ class CameraAimer {
 
   photonlib::PhotonCamera m_cameraMicrosoft{CAMERA_MICROSOFT};
   // FRC uses the north-west-up coordinate system, where x = forward, y = horizontal, z = vertical
-  units::meter_t forward = 8_in;
-  units::meter_t horizontal = -13_in;
-  units::meter_t vertical = 25_in;
-  frc::Translation3d m_translationAprilTags {forward, horizontal, vertical}; // Camera location on the robot, measured from the center
-  frc::Rotation3d m_rotation {0_deg, -1_deg, 0_deg};
-  frc::Transform3d m_robotToCameraAprilTags{m_translationAprilTags, m_rotation};
+  // The translation amount is also measured from the center of the robot
+  frc::Transform3d m_robotToCameraLimeLight{frc::Translation3d{24_cm, 14_cm, 82_cm}, frc::Rotation3d{0_deg, 0_deg, 0_deg}};
+  frc::Transform3d m_robotToCameraMicrosoft{frc::Translation3d{25_cm, -19_cm, 82_cm}, frc::Rotation3d{0_deg, 10_deg, 0_deg}};
   frc::AprilTagFieldLayout m_fieldLayout = frc::LoadAprilTagLayoutField(frc::AprilTagField::k2023ChargedUp);
-  photonlib::PoseStrategy m_poseStrategy = photonlib::PoseStrategy::CLOSEST_TO_REFERENCE_POSE;
+  photonlib::PoseStrategy m_poseStrategy = photonlib::PoseStrategy::MULTI_TAG_PNP;
 
   photonlib::PhotonCamera m_cameraLimeLight{CAMERA_LIMELIGHT};
-  frc::Translation3d m_translationReflectiveTape {forward, -1*horizontal, vertical};
-  frc::Transform3d m_robotToCameraReflectiveTape{m_translationReflectiveTape, m_rotation};
 
-  photonlib::PhotonPoseEstimator m_photonPoseEstimatorAprilTags{
+  photonlib::PhotonPoseEstimator m_poseEstimatorLimeLight{
+    m_fieldLayout,
+    m_poseStrategy, 
+    photonlib::PhotonCamera{CAMERA_LIMELIGHT},
+    m_robotToCameraLimeLight};
+
+  photonlib::PhotonPoseEstimator m_poseEstimatorMicrosoft{
     m_fieldLayout,
     m_poseStrategy, 
     photonlib::PhotonCamera{CAMERA_MICROSOFT},
-    m_robotToCameraAprilTags};
+    m_robotToCameraMicrosoft};
+
+  frc::Pose3d m_poseLimeLight{};
+  frc::Pose3d m_poseMicrosoft{};
 
   bool m_reflectiveTapeMode = false;
   bool m_aprilTagMode = false;
@@ -70,7 +76,7 @@ class CameraAimer {
   ~CameraAimer() {};
 
   AutoAimResult AutoAimAprilTags(int targetId);
-  std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose3d previous);
+  frc::Pose3d EstimatePoseAprilTags(frc::Pose3d previous);
   AutoAimResult AutoAimReflectiveTape();
 
   void ToggleAprilTagMode();

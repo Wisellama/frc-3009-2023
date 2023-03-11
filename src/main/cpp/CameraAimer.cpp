@@ -9,6 +9,8 @@
 #include "FeedbackController.h"
 
 CameraAimer::CameraAimer() {
+  m_poseEstimatorLimeLight.SetMultiTagFallbackStrategy(photonlib::PoseStrategy::LOWEST_AMBIGUITY);
+  m_poseEstimatorMicrosoft.SetMultiTagFallbackStrategy(photonlib::PoseStrategy::LOWEST_AMBIGUITY);
 }
 
 AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
@@ -40,8 +42,10 @@ AutoAimResult CameraAimer::AutoAimAprilTags(int targetId) {
 
       // First calculate range for forward movement
       units::meter_t range = photonlib::PhotonUtils::CalculateDistanceToTarget(
-          m_translationAprilTags.Z(), APRIL_TAG_HEIGHT, m_rotation.Y(),
-          units::degree_t{result.GetBestTarget().GetPitch()});
+        m_robotToCameraLimeLight.Translation().Z(),
+        APRIL_TAG_HEIGHT,
+        m_robotToCameraLimeLight.Rotation().Y(),
+        units::degree_t{result.GetBestTarget().GetPitch()});
 
       // Then set our goal to how far away we want to be
       m_forwardController.SetGoal(double(ARM_LENGTH_FROM_CAMERA));
@@ -88,9 +92,46 @@ AutoAimResult CameraAimer::AutoAimReflectiveTape() {
   return output;
 }
 
-std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
-  m_photonPoseEstimatorAprilTags.SetReferencePose(previous);
-  return m_photonPoseEstimatorAprilTags.Update();
+frc::Pose3d CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
+  // Update our last pose with the new previous value
+  m_poseEstimatorMicrosoft.SetLastPose(previous);
+  m_poseEstimatorLimeLight.SetLastPose(previous);
+  m_poseEstimatorLimeLight.SetReferencePose(previous);
+  m_poseEstimatorMicrosoft.SetReferencePose(previous);
+
+  auto llUpdate = m_poseEstimatorLimeLight.Update();
+  auto mUpdate = m_poseEstimatorMicrosoft.Update();
+
+  if (llUpdate.has_value()) {
+    m_poseLimeLight = llUpdate.value().estimatedPose;
+  }
+
+  if (mUpdate.has_value()) {
+    m_poseMicrosoft = mUpdate.value().estimatedPose;
+  }
+
+  // If we only got 1 value, use that
+  // Otherwise, create some sort of average between the 2
+  frc::Pose3d compositePose = previous; // default to just returning the previous value
+  bool bothHadValues = llUpdate.has_value() && mUpdate.has_value();
+  if (bothHadValues) {
+    if (llUpdate.has_value()) {
+      compositePose = m_poseLimeLight;
+    } else if (mUpdate.has_value()) {
+      compositePose = m_poseMicrosoft;
+    }
+  } else {
+    // We found an AprilTag with both cameras.
+    frc::Transform3d diff = m_poseLimeLight - m_poseMicrosoft;
+    diff = diff / 2;
+    compositePose = m_poseLimeLight.TransformBy(diff);
+  }
+
+  frc::SmartDashboard::PutString("PoseComposite", PoseToStr(compositePose));
+  frc::SmartDashboard::PutString("PoseLL", PoseToStr(m_poseLimeLight));
+  frc::SmartDashboard::PutString("PoseM", PoseToStr(m_poseMicrosoft));
+
+  return compositePose;
 }
 
 void CameraAimer::enableDriverVisionMicrosoft() {
@@ -166,18 +207,22 @@ void CameraAimer::ToggleReflectiveTapeMode() {
 // This only applies to the LimeLight
 void CameraAimer::SetAprilTagMode() {
   // Disable other modes
+  m_aprilTagMode = true;
   m_reflectiveTapeMode = false;
   m_colorMode = false;
 
   // Disable Driver mode to enable pipeline processing
   disableDriverVisionLimelight();
+  disableDriverVisionMicrosoft();
 
   // Set the LimeLight to AprilTag Mode
   m_cameraLimeLight.SetPipelineIndex(PIPELINE_APRILTAGS);
+  m_cameraMicrosoft.SetPipelineIndex(PIPELINE_APRILTAGS);
 }
 
 void CameraAimer::SetReflectiveTapeMode(){
   // Disable other modes
+  m_reflectiveTapeMode = true;
   m_aprilTagMode = false;
   m_colorMode = false;
 
@@ -194,4 +239,19 @@ bool CameraAimer::GetAprilTagMode() {
 
 bool CameraAimer::GetReflectiveTapeMode() {
   return m_reflectiveTapeMode;
+}
+
+std::string PoseToStr(frc::Pose3d pos) {
+  double x = double(pos.X());
+  double y = double(pos.Y());
+  double z = double(pos.Z());
+
+  // https://en.cppreference.com/w/cpp/io/c/fprintf
+  int size = std::snprintf(nullptr, 0, "X: %f.2, Y: %f.2, Z: %f.2", x, y, z);
+  std::vector<char> buf(size + 1);
+  std::snprintf(&buf[0], buf.size(), "X: %f.2, Y: %f.2, Z: %f.2", x, y, z);
+
+  std::string output = std::string(&buf[0]);
+
+  return output;
 }
