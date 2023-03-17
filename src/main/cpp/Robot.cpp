@@ -41,6 +41,7 @@
 #include "DigitMXPDisplay.h"
 #include "Wrist.h"
 #include "GyroAimer.h"
+#include "GyroLeveller.h"
 #include "FeedbackController.h"
 #include "AutonomousState.h"
 
@@ -323,9 +324,10 @@ public:
   }
 
   void TeleopExit() override {
-    // TODO our robot will leave Teleop mode after the game and we have 3 seconds before they score the results.
+    // Our robot will leave Teleop mode after the game and we have 3 seconds before they score the results.
     // We should probably have this keep us still so that we can stay on the charging station.
     // Set the wheel speeds to zero and keep the stabilizer things deployed if we ever add those.
+    setParkingBrake();
   }
 
   void AutonomousInit() override {
@@ -342,6 +344,9 @@ public:
     retractArm();
     releaseParkingBrake();
     lowerWheels(); // Vision tracking can only do tank drive mode anyway
+    m_gyroAimer.ResetGoal();
+    m_gyroLeveller.ResetGoal();
+    m_robotDrive.SetMaxOutput(kHalfSpeed);
   }
 
   // Auto lasts 15 seconds
@@ -388,33 +393,50 @@ public:
     // balance if going to balance
 
     // Set all motors to 0 to avoid watchdog complaints
-    for(auto motor :sparkMotors){
+    for(auto motor : sparkMotors){
       motor->Set(0);
     }
     m_robotDrive.DriveCartesian(0, 0, 0);
 
     // Go through each AutonomousMode state and evaluate them one at a time.
-    if (!m_AutoStateRaiseArmComplete) {
-      AutoStateRaiseArm();
-    } else if (!m_AutoStateExtendArmComplete) {
-      AutoStateExtendArm();
-    } else if (!m_AutoStateLowerWristComplete) {
-      AutoStateLowerWrist();
-    } else if (!m_AutoStateOpenClawComplete) {
-      AutoStateOpenClaw();
-    } else if (!m_AutoStateRaiseWristComplete) {
-      AutoStateRaiseWrist();
-    } else if (!m_AutoStateRetractArmComplete) {
-      AutoStateRetractArm();
-    } else if (!m_AutoStateLowerArmComplete) {
-      AutoStateLowerArm();
+    if (false){
+      if (!m_AutoStateRaiseArmComplete) {
+        AutoStateRaiseArm();
+      } else if (!m_AutoStateExtendArmComplete) {
+        AutoStateExtendArm();
+      } else if (!m_AutoStateLowerWristComplete) {
+        AutoStateLowerWrist();
+      } else if (!m_AutoStateOpenClawComplete) {
+        AutoStateOpenClaw();
+      } else if (!m_AutoStateRaiseWristComplete) {
+        AutoStateRaiseWrist();
+      } else if (!m_AutoStateRetractArmComplete) {
+        AutoStateRetractArm();
+      } else if (!m_AutoStateBackUpComplete) {
+        AutoStateBackUp();
+      } else if (!m_AutoStateContinueOntoPlatformComplete){ 
+        AutoStateContinueOntoPlatform();
+      } else if (!m_AutoStateLevelComplete) {
+        AutoStateLevel();
+      } else {
+        AutoStateEnd();
+      }
     }
+
+    m_gyroAimer.SetGoal(GyroAimer::kStartingYaw + 15);
 
     // Update the arm based on new goals from the autonomous mode functions
     double armMove = m_arm.CalculateMove();
     double maxArmOutput = kHalfSpeed;
     armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armMove);
+
+    // Update the drive based on new goals
+    m_autoRotate = m_gyroAimer.CalculateMove();
+
+    // TODO keep the robot slow while testing to avoid catastrophe
+    double slow = 0.1;
+    m_robotDrive.DriveCartesian(m_autoForward * slow, 0, m_autoRotate);
   }
 
   void AutonomousExit() override {
@@ -539,6 +561,14 @@ private:
     Arm m_arm {&m_armMotorEncoder};
     Wrist m_wrist {&m_wristMotorEncoder};
     GyroAimer m_gyroAimer {&m_pigeon};
+    GyroLeveller m_gyroLeveller {&m_pigeon};
+
+    double m_autoForward = 0.0;
+    double m_autoRotate = 0.0;
+
+    units::inch_t kWheelDiameter = 6_in; // 6 inches (152.4mm)
+    units::inch_t kWheelXSpacing = 23.25_in; // length-wise, forward/back wheel spacing, 23 3/16 inches (589mm)
+    units::inch_t kWheelYSpacing = 22.5_in; // width-wise, left/right wheel spacing 22 1/2 inches (571.5mm)
 
     AutoStateCounters m_autoStateCounters{};
 
@@ -657,6 +687,7 @@ private:
       // maybe let it move a little but clamp it? prevent driver from bringing the claw higher than it should be
     }
 
+    // TODO get values for where the arm should be
     void handleArmForLowGoal() {
        closeClaw();
     }
@@ -794,10 +825,72 @@ private:
       // Make sure the arm stays in and closed while we're lowering
       retractArm();
       closeClaw();
-      m_arm.SetGoal(Arm::kEncoderLowerLimit);
-      m_AutoStateLowerArmComplete = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.05;
+      m_arm.SetGoal(Arm::kEncoderLowerLimit + 0.05);
+      m_AutoStateLowerArmComplete = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.07;
+    }
+
+    // Move the robot backwards until we hit the platform and tip up a bit
+    bool m_AutoStateBackUpComplete = false;
+    void AutoStateBackUp() {
+      // Make sure the arm stays in and closed while we're lowering
+      retractArm();
+      closeClaw();
+
+      m_autoForward = -0.1;
+
+      m_AutoStateBackUpComplete = std::abs(m_pigeon.GetPitch()) > 10;
+    }
+
+    // Continue onto the platform until it tips back downward
+    bool m_AutoStateContinueOntoPlatformComplete = false;
+    void AutoStateContinueOntoPlatform() {
+      retractArm();
+      closeClaw();
+
+      // Continue moving backwards
+      m_autoForward = -0.1;
+
+      // Lower the arm
+      m_arm.SetGoal(Arm::kEncoderLowerLimit + 0.05);
+      bool armIsDown = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.07;
+
+      bool robotLevel = std::abs(m_pigeon.GetPitch()) < 5;
+
+      m_AutoStateContinueOntoPlatformComplete = armIsDown && robotLevel;
+
+      if(m_AutoStateContinueOntoPlatformComplete){
+        // Stop moving forward
+        m_autoForward = 0;
+      }
+    }
+
+    // Make the robot level on the platform
+    bool m_AutoStateLevelComplete = false;
+    void AutoStateLevel() {
+      retractArm();
+      closeClaw();
+
+      m_gyroLeveller.SetGoal(0);
+
+      m_autoForward = m_gyroLeveller.CalculateMove();
+
+      m_AutoStateLevelComplete = std::abs(m_pigeon.GetPitch()) < 0.5;
+    }
+
+    // Stop the robot when we're done with autonomous mode, ideally level on the platform
+    void AutoStateEnd() {
+      retractArm();
+      closeClaw();
+      setParkingBrake();
+      m_arm.ResetGoal();
+      m_wrist.ResetGoal();
+      m_gyroLeveller.ResetGoal();
+      m_gyroAimer.ResetGoal();
+      m_autoForward = 0;
+      m_autoRotate = 0;
     }
 };
+
 
 #ifndef RUNNING_FRC_TESTS
 int main() {
