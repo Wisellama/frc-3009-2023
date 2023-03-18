@@ -304,10 +304,9 @@ public:
     double wristInput = m_controls.Wrist();
 
     double wristMove = 0.0;
-    if (false) { // TODO if we want to try wrist stability with the feedback controller
-      // Actually, I don't think this will work because the motor slips a lot which would screw up the encoder position.
-      double wristEncoderMove = m_wrist.DegreesToEncoder(wristInput);
-      m_wrist.MoveGoal(wristEncoderMove);
+    if (true) {
+      double wristPotMove = m_wrist.DegreesToPot(wristInput);
+      m_wrist.MoveGoal(wristPotMove);
 
       wristMove = m_wrist.CalculateMove();
     } else {
@@ -346,6 +345,8 @@ public:
     lowerWheels(); // Vision tracking can only do tank drive mode anyway
     m_gyroAimer.ResetGoal();
     m_gyroLeveller.ResetGoal();
+    m_arm.ResetGoal();
+    m_wrist.ResetGoal();
     m_robotDrive.SetMaxOutput(kHalfSpeed);
   }
 
@@ -391,6 +392,7 @@ public:
     // drive out over charging station perhaps?
     // ???
     // balance if going to balance
+    // profit
 
     // Set all motors to 0 to avoid watchdog complaints
     for(auto motor : sparkMotors){
@@ -430,6 +432,12 @@ public:
     double maxArmOutput = kHalfSpeed;
     armMove = std::clamp(armMove, -1 * maxArmOutput, maxArmOutput);
     m_armMotor.Set(armMove);
+
+    // Update the wrist based on the goals too
+    double wristMove = m_wrist.CalculateMove();
+    double maxWristOutput = kHalfSpeed;
+    wristMove = std::clamp(wristMove, -1 * maxWristOutput, maxWristOutput);
+    m_wristMotor.Set(wristMove);
 
     // Update the drive based on new goals
     m_autoRotate = m_gyroAimer.CalculateMove();
@@ -559,7 +567,7 @@ private:
     rev::SparkMaxRelativeEncoder m_wristMotorEncoder = m_wristMotor.GetEncoder();
 
     Arm m_arm {&m_armMotorEncoder};
-    Wrist m_wrist {&m_wristMotorEncoder};
+    Wrist m_wrist {};
     GyroAimer m_gyroAimer {&m_pigeon};
     GyroLeveller m_gyroLeveller {&m_pigeon};
 
@@ -734,7 +742,7 @@ private:
       publishTimestamp.Set(std::ctime(&nowTime));
 
       frc::SmartDashboard::PutNumber("ArmPositionEncoder", m_arm.GetEncoderPosition());
-      frc::SmartDashboard::PutNumber("WristPositionEncoder", m_wrist.GetEncoderPosition());
+      frc::SmartDashboard::PutNumber("WristPositionPot", m_wrist.GetPotPos());
 
       frc::SmartDashboard::PutBoolean("DigitDisplayA", m_digitBoard.GetButtonA());
       frc::SmartDashboard::PutBoolean("DigitDisplayB", m_digitBoard.GetButtonB());
@@ -774,15 +782,14 @@ private:
       m_AutoStateExtendArmComplete = m_autoStateCounters.ExtendArm >= 70;
     }
 
-    // Rotate the wrist down
+    // Rotate the wrist down to level
     bool m_AutoStateLowerWristComplete = false;
     void AutoStateLowerWrist() {
       if (m_AutoStateLowerWristComplete) {
         return;
       }
-      m_wristMotor.Set(.2);
-      m_autoStateCounters.LowerWrist++;
-      m_AutoStateLowerWristComplete = m_autoStateCounters.LowerWrist >= 100;
+      m_wrist.SetGoal(Wrist::kPotLevel);
+      m_AutoStateLowerWristComplete = m_wrist.GetPotPos() > Wrist::kPotLevel;
     }
 
     // Open the claw to drop the game piece
@@ -802,9 +809,8 @@ private:
       if (m_AutoStateRaiseWristComplete) {
         return;
       }
-      m_wristMotor.Set(-0.3);
-      m_autoStateCounters.RaiseWrist++;
-      m_AutoStateRaiseWristComplete = m_autoStateCounters.RaiseWrist >= 100;
+      m_wrist.SetGoal(Wrist::kPotUpperLimit);
+      m_AutoStateRaiseWristComplete = m_wrist.GetPotPos() < Wrist::kPotUpperLimit + 0.1;
     }
 
     // Retract the arm and close the claw
@@ -817,16 +823,6 @@ private:
       closeClaw();
       m_autoStateCounters.RetractArm++;
       m_AutoStateRetractArmComplete = m_autoStateCounters.RetractArm >= 150;
-    }
-
-    // Lower the arm back inside the robot
-    bool m_AutoStateLowerArmComplete = false;
-    void AutoStateLowerArm() {
-      // Make sure the arm stays in and closed while we're lowering
-      retractArm();
-      closeClaw();
-      m_arm.SetGoal(Arm::kEncoderLowerLimit + 0.05);
-      m_AutoStateLowerArmComplete = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.07;
     }
 
     // Move the robot backwards until we hit the platform and tip up a bit
@@ -844,6 +840,9 @@ private:
     // Continue onto the platform until it tips back downward
     bool m_AutoStateContinueOntoPlatformComplete = false;
     void AutoStateContinueOntoPlatform() {
+      if (m_AutoStateContinueOntoPlatformComplete) {
+        return;
+      }
       retractArm();
       closeClaw();
 
@@ -888,6 +887,19 @@ private:
       m_gyroAimer.ResetGoal();
       m_autoForward = 0;
       m_autoRotate = 0;
+    }
+
+    // Lower the arm back inside the robot
+    bool m_AutoStateLowerArmComplete = false;
+    void AutoStateLowerArm() {
+      if (m_AutoStateLowerArmComplete) {
+        return;
+      }
+      // Make sure the arm stays in and closed while we're lowering
+      retractArm();
+      closeClaw();
+      m_arm.SetGoal(Arm::kEncoderLowerLimit + 0.05);
+      m_AutoStateLowerArmComplete = m_arm.GetEncoderPosition() <= Arm::kEncoderLowerLimit + 0.07;
     }
 };
 

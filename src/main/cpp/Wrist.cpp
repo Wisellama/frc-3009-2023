@@ -1,18 +1,17 @@
 #include "Wrist.h"
 
-Wrist::Wrist(rev::RelativeEncoder *encoder) {
-    m_encoder = encoder;
+Wrist::Wrist() {
 }
 
 Wrist::~Wrist() {
 }
 
 void Wrist::ResetGoal() {
-    m_feedbackController.SetGoal(GetEncoderPosition());
+    SetGoal(GetPotPos());
 }
 
 double Wrist::CalculateMove() {
-    double move = m_feedbackController.CalculateMove(GetEncoderPosition());
+    double move = m_feedbackController.CalculateMove(GetPotPos());
 
     if (std::abs(move) < kMinimumMove) {
         return 0.0;
@@ -25,13 +24,17 @@ void Wrist::MoveGoal(double move) {
     m_feedbackController.MoveGoal(move);
 }
 
-double Wrist::GetEncoderPosition() {
-    return m_encoder->GetPosition();
+void Wrist::SetGoal(double goal) {
+    m_feedbackController.SetGoal(goal);
 }
 
-double Wrist::DegreesToEncoder(double degrees) {
-    return degrees / kDegreesToEncoderRatio;
+double Wrist::GetPotPos() {
+    return m_pot.Get();
 }
-double Wrist::EncoderToDegrees(double encoder) {
-    return encoder * kDegreesToEncoderRatio;
+
+double Wrist::DegreesToPot(double degrees) {
+    return degrees / kDegreesToPotRatio;
+}
+double Wrist::PotToDegrees(double pot) {
+    return pot * kDegreesToPotRatio;
 }
