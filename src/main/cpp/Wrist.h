@@ -8,9 +8,9 @@ class Wrist {
     public:
     // Set the limits so that we don't attempt to move past our physical limits.
     // NOTE: the values are reversed, going up means lower values. All the way up is 0. All the way down is 1.
-    static constexpr double kPotUpperLimit = 0.0; // wrist is all the way up (how it sits when the arm is in the robot)
-    static constexpr double kPotLevel = 0.7; // not quite linear to go to 90 degrees level
-    static constexpr double kPotLowerLimit = 1.0; // wrist is all the way down (picking up a cube in front of the robot)
+    static constexpr double kPotUpperLimit = 0.1; // wrist is all the way up (how it sits when the arm is in the robot)
+    static constexpr double kPotLevel = 0.6; // not quite linear to go to 90 degrees level
+    static constexpr double kPotLowerLimit = 0.9; // wrist is all the way down (picking up a cube in front of the robot)
 
     // Set the equivalent limits in degrees. These are the physical limits of the arm in degrees.
     static constexpr double kDegreesLowerLimit = 0.0;

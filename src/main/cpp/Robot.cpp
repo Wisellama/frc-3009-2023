@@ -22,6 +22,7 @@
 #include <frc/I2C.h>
 #include <frc/kinematics/MecanumDriveKinematics.h>
 #include <frc/kinematics/MecanumDriveOdometry.h>
+#include <frc/estimator/MecanumDrivePoseEstimator.h>
 
 #include <cameraserver/CameraServer.h>
 
@@ -95,6 +96,13 @@ public:
     // Limit the motor max speed
     m_robotDrive.SetMaxOutput(kHalfSpeed);
     m_robotDrive.SetDeadband(kDeadband); // I don't trust this to do what it says at all
+
+    // Initialize the drive pose estimator
+    m_drivePoseEstimator = new frc::MecanumDrivePoseEstimator(
+      m_driveKinematics,
+      frc::Rotation2d{units::degree_t(m_pigeon.GetYaw())},
+      m_driveWheelPositions,
+      frc::Pose2d{});
 
     // Set default solenoid positions
     retractArm();
@@ -170,11 +178,20 @@ public:
     AutoAimResult ignore = m_cameraAimer.AutoAimAprilTags(-1);
     AutoAimResult ignore2 = m_cameraAimer.AutoAimReflectiveTape();
 
-    m_robotPose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
+    std::optional<photonlib::EstimatedRobotPose> cameraEstimate = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
+    if (cameraEstimate.has_value()) {
+      frc::Pose2d pose2d = Pose3dTo2d(cameraEstimate->estimatedPose);
+      m_drivePoseEstimator->AddVisionMeasurement(pose2d, cameraEstimate->timestamp);
+    }
+    m_driveWheelPositions.frontLeft = m_frontLeftEncoder.GetPosition() * kDistancePerPulse;
+    m_driveWheelPositions.frontRight = m_frontRightEncoder.GetPosition() * kDistancePerPulse;
+    m_driveWheelPositions.rearLeft = m_rearLeftEncoder.GetPosition() * kDistancePerPulse;
+    m_driveWheelPositions.rearRight = m_rearRightEncoder.GetPosition() * kDistancePerPulse;
+    m_robotPose = m_drivePoseEstimator->Update(frc::Rotation2d{units::degree_t(m_pigeon.GetYaw())}, m_driveWheelPositions);
 
-    frc::Pose3d zero {};
-    frc::Pose3d goal {};
-    frc::Transform3d diff = goal - m_robotPose;
+    frc::Pose2d zero {};
+    frc::Pose2d goal {};
+    frc::Transform2d diff = goal - m_robotPose;
     frc::SmartDashboard::PutString("PoseGoalDiff", PoseToStr(zero.TransformBy(diff)));
   }
 
@@ -207,19 +224,6 @@ public:
 
     if (m_controls.ReflectiveTapeMode()) {
       m_cameraAimer.ToggleReflectiveTapeMode();
-    }
-
-    if (m_cameraAimer.GetAprilTagMode()) {
-      // Drive the robot based on camera targeting
-      //AutoAimResult result = m_cameraAimer.AutoAimAprilTags(-1);
-      //forward = result.GetForwardSpeed();
-      //forward = forward * 0.01;
-      //rotate = result.GetRotationSpeed();
-      //rotate = rotate / 100.0;
-      // Just manually drive
-      //forward = m_controls.DriveForward();
-
-      m_robotPose = m_cameraAimer.EstimatePoseAprilTags(m_robotPose);
     }
 
     if (true) {
@@ -305,10 +309,10 @@ public:
 
     double wristMove = 0.0;
     if (true) {
-      double wristPotMove = m_wrist.DegreesToPot(wristInput);
+      double wristPotMove = m_wrist.DegreesToPot(wristInput) * 2;
       m_wrist.MoveGoal(wristPotMove);
 
-      wristMove = m_wrist.CalculateMove();
+      wristMove = -1 * m_wrist.CalculateMove();
     } else {
       wristMove = wristInput;
     }
@@ -497,6 +501,25 @@ private:
   rev::CANSparkMax m_rearRightFollow{kRearRightFollowChannel, rev::CANSparkMax::MotorType::kBrushless};
   frc::MecanumDrive m_robotDrive{m_frontLeft, m_rearLeft, m_frontRight, m_rearRight};
 
+  rev::SparkMaxRelativeEncoder m_frontLeftEncoder = m_frontLeft.GetEncoder();
+  rev::SparkMaxRelativeEncoder m_frontRightEncoder = m_frontRight.GetEncoder();
+  rev::SparkMaxRelativeEncoder m_rearLeftEncoder = m_rearLeft.GetEncoder();
+  rev::SparkMaxRelativeEncoder m_rearRightEncoder = m_rearRight.GetEncoder();
+
+  // Drivetrain kinematics for pose estimation
+  units::meter_t kWheelDiameter = 6_in; // 6 inches (152.4mm)
+  units::meter_t kWheelXSpacing = 23.25_in; // length-wise, forward/back wheel spacing, 23 3/16 inches (589mm)
+  units::meter_t kWheelYSpacing = 22.5_in; // width-wise, left/right wheel spacing 22 1/2 inches (571.5mm)
+  frc::Translation2d m_frontLeftWheel {kWheelXSpacing / 2, -1 * kWheelYSpacing / 2};
+  frc::Translation2d m_frontRightWheel {kWheelXSpacing / 2, kWheelYSpacing / 2};
+  frc::Translation2d m_rearLeftWheel {-1 * kWheelXSpacing / 2, -1 * kWheelYSpacing / 2};
+  frc::Translation2d m_rearRightWheel {-1 * kWheelXSpacing / 2, kWheelYSpacing / 2};
+  frc::MecanumDriveKinematics m_driveKinematics {m_frontLeftWheel, m_frontRightWheel, m_rearLeftWheel, m_rearRightWheel};
+  frc::MecanumDriveWheelPositions m_driveWheelPositions {};
+  frc::MecanumDrivePoseEstimator* m_drivePoseEstimator;
+
+  double kEncoderResolution = 42;
+  units::meter_t kDistancePerPulse = M_PI * kWheelDiameter / kEncoderResolution;
 
   // This SparkMax controls the arm up/down rotation
   rev::CANSparkMax m_armMotor{kArmChannel, rev::CANSparkMax::MotorType::kBrushless};
@@ -537,7 +560,7 @@ private:
   double kHalfSpeed = 0.5;
   double kQuarterSpeed = 0.25;
 
-  frc::Pose3d m_robotPose {};
+  frc::Pose2d m_robotPose {};
 
   DigitMXPDisplay m_digitBoard {};
 
@@ -573,10 +596,6 @@ private:
 
     double m_autoForward = 0.0;
     double m_autoRotate = 0.0;
-
-    units::inch_t kWheelDiameter = 6_in; // 6 inches (152.4mm)
-    units::inch_t kWheelXSpacing = 23.25_in; // length-wise, forward/back wheel spacing, 23 3/16 inches (589mm)
-    units::inch_t kWheelYSpacing = 22.5_in; // width-wise, left/right wheel spacing 22 1/2 inches (571.5mm)
 
     AutoStateCounters m_autoStateCounters{};
 
@@ -726,7 +745,7 @@ private:
       publishClawClosed.Set(m_clawClosed);
 
       std::stringstream poseStr;
-      poseStr << "X: " << m_robotPose.X().value() << " Y: " << m_robotPose.Y().value() << " Z: " << m_robotPose.Z().value();
+      poseStr << "X: " << m_robotPose.X().value() << " Y: " << m_robotPose.Y().value();
       publishRobotPose.Set(poseStr.str());
 
       frc::SmartDashboard::PutBoolean("ParkingBrake", m_parkingBrake);

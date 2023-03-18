@@ -11,6 +11,8 @@ void Wrist::ResetGoal() {
 }
 
 double Wrist::CalculateMove() {
+    m_feedbackController.ClampGoal(kPotUpperLimit, kPotLowerLimit);
+
     double move = m_feedbackController.CalculateMove(GetPotPos());
 
     if (std::abs(move) < kMinimumMove) {

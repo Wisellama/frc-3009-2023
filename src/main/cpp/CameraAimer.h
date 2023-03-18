@@ -14,7 +14,8 @@
 #include "AprilTagPositionEnum.h"
 #include "FeedbackController.h"
 
-std::string PoseToStr(frc::Pose3d pos);
+std::string PoseToStr(frc::Pose2d pos);
+frc::Pose2d Pose3dTo2d(frc::Pose3d pose3d);
 
 class CameraAimer {
   nt::BooleanPublisher m_publishFacingBlue;
@@ -64,9 +65,6 @@ class CameraAimer {
     photonlib::PhotonCamera{CAMERA_MICROSOFT},
     m_robotToCameraMicrosoft};
 
-  frc::Pose3d m_poseLimeLight{};
-  frc::Pose3d m_poseMicrosoft{};
-
   bool m_reflectiveTapeMode = false;
   bool m_aprilTagMode = false;
   bool m_colorMode = false;
@@ -76,7 +74,8 @@ class CameraAimer {
   ~CameraAimer() {};
 
   AutoAimResult AutoAimAprilTags(int targetId);
-  frc::Pose3d EstimatePoseAprilTags(frc::Pose3d previous);
+  std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose2d previous);
+  std::optional<photonlib::EstimatedRobotPose> EstimatePoseAprilTags(frc::Pose3d previous);
   AutoAimResult AutoAimReflectiveTape();
 
   void ToggleAprilTagMode();

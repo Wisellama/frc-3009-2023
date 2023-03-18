@@ -92,7 +92,11 @@ AutoAimResult CameraAimer::AutoAimReflectiveTape() {
   return output;
 }
 
-frc::Pose3d CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
+std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(frc::Pose2d previous) {
+  return EstimatePoseAprilTags(frc::Pose3d(previous));
+}
+
+std::optional<photonlib::EstimatedRobotPose> CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
   // Update our last pose with the new previous value
   m_poseEstimatorMicrosoft.SetLastPose(previous);
   m_poseEstimatorLimeLight.SetLastPose(previous);
@@ -102,34 +106,27 @@ frc::Pose3d CameraAimer::EstimatePoseAprilTags(frc::Pose3d previous) {
   auto llUpdate = m_poseEstimatorLimeLight.Update();
   auto mUpdate = m_poseEstimatorMicrosoft.Update();
 
-  if (llUpdate.has_value()) {
-    m_poseLimeLight = llUpdate.value().estimatedPose;
-  }
-
-  if (mUpdate.has_value()) {
-    m_poseMicrosoft = mUpdate.value().estimatedPose;
-  }
-
   // If we only got 1 value, use that
   // Otherwise, create some sort of average between the 2
-  frc::Pose3d compositePose = previous; // default to just returning the previous value
+  auto compositePose = llUpdate;
   bool bothHadValues = llUpdate.has_value() && mUpdate.has_value();
   if (bothHadValues) {
     if (llUpdate.has_value()) {
-      compositePose = m_poseLimeLight;
+      compositePose = llUpdate;
     } else if (mUpdate.has_value()) {
-      compositePose = m_poseMicrosoft;
+      compositePose = mUpdate;
     }
   } else {
     // We found an AprilTag with both cameras.
-    frc::Transform3d diff = m_poseLimeLight - m_poseMicrosoft;
+    frc::Transform3d diff = llUpdate->estimatedPose - mUpdate->estimatedPose;
     diff = diff / 2;
-    compositePose = m_poseLimeLight.TransformBy(diff);
+    compositePose->estimatedPose = compositePose->estimatedPose.TransformBy(diff);
+    compositePose->timestamp = (llUpdate->timestamp + mUpdate->timestamp) / 2;
   }
 
-  frc::SmartDashboard::PutString("PoseComposite", PoseToStr(compositePose));
-  frc::SmartDashboard::PutString("PoseLL", PoseToStr(m_poseLimeLight));
-  frc::SmartDashboard::PutString("PoseM", PoseToStr(m_poseMicrosoft));
+  frc::SmartDashboard::PutString("PoseComposite", PoseToStr(Pose3dTo2d(compositePose->estimatedPose)));
+  frc::SmartDashboard::PutString("PoseLL", PoseToStr(Pose3dTo2d(llUpdate->estimatedPose)));
+  frc::SmartDashboard::PutString("PoseM", PoseToStr(Pose3dTo2d(mUpdate->estimatedPose)));
 
   return compositePose;
 }
@@ -241,17 +238,22 @@ bool CameraAimer::GetReflectiveTapeMode() {
   return m_reflectiveTapeMode;
 }
 
-std::string PoseToStr(frc::Pose3d pos) {
+std::string PoseToStr(frc::Pose2d pos) {
   double x = double(pos.X());
   double y = double(pos.Y());
-  double z = double(pos.Z());
 
   // https://en.cppreference.com/w/cpp/io/c/fprintf
-  int size = std::snprintf(nullptr, 0, "X: %f.2, Y: %f.2, Z: %f.2", x, y, z);
+  int size = std::snprintf(nullptr, 0, "X: %f.2, Y: %f.2", x, y);
   std::vector<char> buf(size + 1);
-  std::snprintf(&buf[0], buf.size(), "X: %f.2, Y: %f.2, Z: %f.2", x, y, z);
+  std::snprintf(&buf[0], buf.size(), "X: %f.2, Y: %f.2", x, y);
 
   std::string output = std::string(&buf[0]);
 
   return output;
+}
+
+frc::Pose2d Pose3dTo2d(frc::Pose3d pose3d) {
+  frc::Rotation3d rotation3d = pose3d.Rotation();
+  frc::Pose2d pose2d {frc::Translation2d{pose3d.X(), pose3d.Y()}, rotation3d.Z()};
+  return pose2d;
 }
