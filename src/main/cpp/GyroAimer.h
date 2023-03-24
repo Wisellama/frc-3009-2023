@@ -13,7 +13,7 @@ class GyroAimer {
     FeedbackController m_feedbackController{};
 
     public:
-    static constexpr double kMaxDegrees = 180.0;
+    static constexpr double kMaxDegrees = 360.0;
 
     GyroAimer(ctre::phoenix::sensors::Pigeon2 *pigeon);
     ~GyroAimer() {};

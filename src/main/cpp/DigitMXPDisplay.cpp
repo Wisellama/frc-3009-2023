@@ -12,7 +12,8 @@ DigitMXPDisplay::DigitMXPDisplay() {
     m_i2c.WriteBulk(setup, 1);
 
     // Set ROW driver output
-    //m_i2c.WriteBulk(0b10100000);
+    //uint8_t row[] = {0b10100000};
+    //m_i2c.WriteBulk(row, 1);
 
     // Turn displays on, no blinking
     uint8_t on[] = {0b10000001};
