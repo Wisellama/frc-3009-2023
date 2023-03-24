@@ -147,6 +147,16 @@ void CameraAimer::disableDriverVisionLimelight() {
   m_cameraLimeLight.SetDriverMode(false);
 }
 
+int CameraAimer::FindAutoStartFromAprilTags() {
+  const auto& result = m_cameraMicrosoft.GetLatestResult();
+
+  if (!result.HasTargets()) {
+    return -1;
+  }
+
+  return findAutoStart(result.GetBestTarget().GetFiducialId());
+}
+
 units::meter_t CameraAimer::getDistanceFromGrid() {
   const auto& result = m_cameraMicrosoft.GetLatestResult();
 

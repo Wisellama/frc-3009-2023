@@ -12,7 +12,6 @@ class DigitMXPDisplay {
     bool GetButtonA();
     bool GetButtonB();
     double GetPot();
-    void Write(int registerAddress, uint8_t data);
     void InitDisplays();
     void Test();
 

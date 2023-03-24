@@ -11,7 +11,7 @@ void Wrist::ResetGoal() {
 }
 
 double Wrist::CalculateMove() {
-    m_feedbackController.ClampGoal(kPotUpperLimit, kPotLowerLimit);
+    //m_feedbackController.ClampGoal(kPotUpperLimit, kPotLowerLimit);
 
     double move = m_feedbackController.CalculateMove(GetPotPos());
 
@@ -19,7 +19,7 @@ double Wrist::CalculateMove() {
         return 0.0;
     }
 
-    return move;
+    return -1 * move;
 }
 
 void Wrist::MoveGoal(double move) {
@@ -28,6 +28,20 @@ void Wrist::MoveGoal(double move) {
 
 void Wrist::SetGoal(double goal) {
     m_feedbackController.SetGoal(goal);
+}
+
+double Wrist::GetGoal() {
+    return m_feedbackController.GetGoal();
+}
+
+double Wrist::GetGoalWithOffset(double offset) {
+  if (GetGoal() > kPotLowerLimit) {
+    return kPotLowerLimit - offset;
+  } else if (GetGoal() <= kPotUpperLimit) {
+    return kPotUpperLimit + offset;
+  } else {
+    return GetGoal();
+  }
 }
 
 double Wrist::GetPotPos() {

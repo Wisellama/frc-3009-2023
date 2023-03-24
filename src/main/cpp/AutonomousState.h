@@ -6,4 +6,6 @@ struct AutoStateCounters {
     int ExtendArm = 0;
     int OpenClaw = 0;
     int RetractArm = 0;
+    int Level = 0;
+    int Bounce = 0;
 };

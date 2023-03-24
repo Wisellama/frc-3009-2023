@@ -24,17 +24,35 @@ void Arm::ResetGoal() {
     SetGoal(GetEncoderPosition());
 }
 
+double Arm::GetGoal() {
+    return m_feedbackController.GetGoal();
+}
+
 double Arm::CalculateMove() {
     if (!m_ignorelimits) {
         m_feedbackController.ClampGoal(EncoderLowerLimit(), EncoderUpperLimit());
     }
 
     double move = m_feedbackController.CalculateMove(GetEncoderPosition());
-    if (std::abs(move) < kMinimumMove) {
+    move /= kEncoderUpperLimit;
+    double minCheck = 0.05;
+    double minMove = 0.1;
+    if (m_extended) {
+        minMove *= 2;
+    }
+    if (std::abs(move) > minCheck) {
+        if (std::abs(move) < minMove) {
+            double output = minMove;
+            if (move < 0) {
+                output *= -1;
+            }
+            return output;
+        } else {
+            return move;
+        }
+    } else {
         return 0.0;
     }
-
-    return move*kMoveBoost;
 }
 
 void Arm::SetExtended() {
@@ -84,3 +102,16 @@ double Arm::EncoderToDegrees(double value) {
  bool Arm::GetIgnoreLimits() {
     return m_ignorelimits;
  }
+
+ double Arm::GetGoalWithOffset(double offset) {
+if(m_ignorelimits){
+    return GetGoal();
+}
+  if (GetGoal() > kEncoderUpperLimit) {
+    return kEncoderUpperLimit - offset;
+  } else if (GetGoal() <= kEncoderLowerLimit) {
+    return kEncoderLowerLimit + offset;
+  } else {
+    return GetGoal();
+  }
+}

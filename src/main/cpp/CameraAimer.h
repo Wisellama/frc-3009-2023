@@ -85,6 +85,8 @@ class CameraAimer {
   bool GetAprilTagMode();
   bool GetReflectiveTapeMode();
 
+  int FindAutoStartFromAprilTags();
+
   units::meter_t getDistanceFromGrid();
 
   void enableDriverVisionMicrosoft();

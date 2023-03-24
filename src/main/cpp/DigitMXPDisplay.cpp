@@ -8,19 +8,15 @@ DigitMXPDisplay::DigitMXPDisplay() {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
     // Setup displays
-    for(int i = 0; i < 4; i++) {
-        Write(i, 0b00100001);
-    }
+    uint8_t setup[] = {0b00100001};
+    m_i2c.WriteBulk(setup, 1);
 
     // Set ROW driver output
-    for(int i = 0; i < 4; i++) {
-        Write(i, 0b10100000);
-    }
+    //m_i2c.WriteBulk(0b10100000);
 
     // Turn displays on, no blinking
-    for(int i = 0; i < 4; i++) {
-        Write(i, 0b10000001);
-    }
+    uint8_t on[] = {0b10000001};
+    m_i2c.WriteBulk(on, 1);
 }
 
 DigitMXPDisplay::~DigitMXPDisplay() {
@@ -38,13 +34,17 @@ double DigitMXPDisplay::GetPot() {
     return m_potentiometer.GetValue();
 }
 
-void DigitMXPDisplay::Write(int registerAddress, uint8_t data) {
-    m_i2c.Write(registerAddress, data);
-}
 
 void DigitMXPDisplay::Test() {
-    Write(0, 0b11101001); // D
-    Write(1, 0b11101101); // A
-    Write(2, 0b11101010); // C
-    Write(3, 0b11100001); // F
+    uint8_t d[] = {0, 0b11101001};
+    m_i2c.WriteBulk(d, 2);
+
+    uint8_t a[] = {0, 0b11101101};
+    m_i2c.WriteBulk(a, 2);
+
+    uint8_t c[] = {0, 0b11101010};
+    m_i2c.WriteBulk(c, 2);
+
+    uint8_t f[] = {0, 0b11100001};
+    m_i2c.WriteBulk(f, 2);
 }

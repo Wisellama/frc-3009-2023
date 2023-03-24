@@ -83,3 +83,21 @@ bool targetFound(int id, std::span<const photonlib::PhotonTrackedTarget> targets
   }
   return false;
 }
+
+int findAutoStart(int bestId) {
+  const static AprilTagPosition bestTag = AprilTagPosition(bestId);
+
+  if (bestTag == AprilTagPosition::BlueCommunityCenter || bestTag == AprilTagPosition::RedCommunityCenter) {
+    return 2;
+  }
+
+  if (bestTag == AprilTagPosition::BlueCommunityLeft || bestTag == AprilTagPosition::RedCommunityLeft) {
+    return 1;
+  }
+
+if (bestTag == AprilTagPosition::BlueCommunityRight || bestTag == AprilTagPosition::RedCommunityRight) {
+    return 3;
+  }
+
+  return -1;
+}

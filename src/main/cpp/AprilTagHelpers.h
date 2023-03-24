@@ -22,3 +22,6 @@ bool lookingAtOwnSubstation(std::vector<int> idsDetected);
 
 // Look for a specific AprilTag ID in the detected targets.
 bool targetFound(int id, std::span<const photonlib::PhotonTrackedTarget> targets);
+
+// returns -1 for no target, 1 for left, 2 for center, 3 for right
+int findAutoStart(int bestid);

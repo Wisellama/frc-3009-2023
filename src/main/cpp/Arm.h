@@ -8,9 +8,6 @@
 
 class Arm {
     private:
-    double kMinimumMove = 0.01;
-    double kMoveBoost = 4;
-
     rev::RelativeEncoder *m_encoder;
     bool m_extended = false;
     bool m_ignorelimits = false;
@@ -21,7 +18,7 @@ class Arm {
     // Set the arm encoder limits so that we don't attempt to move past our physical limits.
     static constexpr double kEncoderLowerLimit = 0.0; // arm is in and in the robot, roughly 0 degrees straight down
     static constexpr double kEncoderExtendedLowerLimit = 0.2; // extended arm down in front of robot, touching the ground, roughly 30 degrees
-    static constexpr double kEncoderUpperLimit = 0.6; // arm is all the way up, roughly 110 degrees
+    static constexpr double kEncoderUpperLimit = 0.55; // arm is all the way up, roughly 110 degrees
 
     // Set the equivalent limits in degrees. These are the physical limits of the arm in degrees.
     static constexpr double kDegreesLowerLimit = 0.0;
@@ -37,6 +34,8 @@ class Arm {
     void ToggleLimits();
     double CalculateMove();
     void SetGoal(double move);
+    double GetGoal();
+    double GetGoalWithOffset(double offset);
     void SetExtended();
     void SetRetracted();
     void ToggleExtended();
