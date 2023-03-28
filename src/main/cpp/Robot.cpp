@@ -376,6 +376,9 @@ public:
     m_robotDrive.SetMaxOutput(kHalfSpeed);
 
     m_autoStartingPosition = -1;
+
+    // todo convert encoder position to feet/inches
+    m_rearRightEncoder.SetPositionConversionFactor(2.4);
   }
 
   // Auto lasts 15 seconds
@@ -1047,7 +1050,7 @@ private:
       m_autoForward = -0.5;
 
       m_autoStates.BackupStraight++;
-      bool time = m_autoStates.BackupStraight > 10; // This is tick timer, not a good thing to rely on but a backup in case everything else fails
+      bool time = m_autoStates.BackupStraight > 215; // This is tick timer, not a good thing to rely on but a backup in case everything else fails
 
       // Need to move at least 18 feet to get to the center field game pieces
       // Move only 12 feet?
@@ -1055,8 +1058,7 @@ private:
 
       frc::SmartDashboard::PutNumber("StraightBackPosition", position);
 
-      // todo convert encoder position to feet/inches
-
+  
       // todo check if position is greater than certain amount of feet
 
       m_autoStates.BackupStraightComplete = time || position;

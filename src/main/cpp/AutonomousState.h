@@ -7,7 +7,7 @@
 struct AutoState {
     enum AutoModes { RampBackup, StraightBackup };
 
-    AutoModes Mode = RampBackup; // change to StraightBackup to test other mode
+    AutoModes Mode = StraightBackup; // change to StraightBackup to test other mode
 
     int ExtendArm = 0;
     int OpenClaw = 0;
