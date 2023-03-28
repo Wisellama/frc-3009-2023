@@ -9,8 +9,7 @@ GyroLeveller::GyroLeveller(ctre::phoenix::sensors::Pigeon2 *pigeon) {
 }
 
 double GyroLeveller::GetPitch() {
-    // TODO update to roll because the pigeon is backwards
-    return m_pigeon->GetPitch();
+    return m_pigeon->GetRoll();
 }
 
 double GyroLeveller::CalculateMove() {

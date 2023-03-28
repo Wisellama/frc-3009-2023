@@ -355,11 +355,14 @@ public:
   }
 
   void AutonomousInit() override {
-    // Reset the autonomous states
-    if (m_autoStates != nullptr) {
-      delete m_autoStates;
+    if(m_digitBoard.GetPot() > DigitMXPDisplay::kPotCenter){
+    // full counter clockwise is straight auto
+    m_autoStates->Mode = AutoState::AutoModes::StraightBackup;
+
+    } else{
+      m_autoStates->Mode = AutoState::AutoModes::RampBackup;
+      //full clockwise is ramp auto
     }
-    m_autoStates = new AutoState();
 
     // Set the Microsoft camera to process AprilTags
     m_cameraAimer.disableDriverVisionMicrosoft();
@@ -384,6 +387,27 @@ public:
 
     // todo convert encoder position to feet/inches
     m_rearRightEncoder.SetPositionConversionFactor(2.4);
+    m_autoStates->AutoStateFinish = false;
+    m_autoStates->BackUpComplete = false;
+    m_autoStates->BackupStraight = 0;
+    m_autoStates->BackupStraightComplete = false;
+    m_autoStates->Bounce = 0;
+    m_autoStates->ContinueOntoPlatformComplete = false;
+    m_autoStates->ExtendArm = 0;
+    m_autoStates->ExtendArmComplete = false;
+    m_autoStates->Level = 0;
+    m_autoStates->LevelComplete = false;
+    m_autoStates->LowerArmComplete = false;
+    m_autoStates->LowerWristComplete = false;
+    m_autoStates->OpenClaw = 0;
+    m_autoStates->RetractArm = 0;
+    m_autoStates->RaiseArmComplete = false;
+    m_autoStates->OpenClawComplete = false;
+    m_autoStates->RaiseWristComplete = false;
+    m_autoStates->RetractArmComplete = false;
+    m_autoForward = 0;
+    m_autoRotate = 0;
+
   }
 
   // Auto lasts 15 seconds
@@ -528,7 +552,6 @@ public:
     m_wristMotor.Set(wristMove);
 
     // Update the drive based on new goals
-    m_autoRotate = m_gyroAimer.CalculateMove();
     m_autoRotate = 0;
 
     // keep the robot slow while testing to avoid catastrophe
@@ -684,7 +707,7 @@ private:
     bool m_wristHadInput = false;
     double m_autoForward = 0.0;
     double m_autoRotate = 0.0;
-    double m_highestLevel = 0.0;
+    double m_highestLevel = 10;
     int m_autoStartingPosition = -1;
 
     AutoState* m_autoStates = nullptr;
@@ -866,6 +889,19 @@ private:
 
       frc::SmartDashboard::PutNumber("WristGoal", m_wrist.GetGoal());
       frc::SmartDashboard::PutNumber("ArmGoal", m_arm.GetGoal());
+
+      frc::SmartDashboard::PutBoolean("AutoRaiseArm", m_autoStates->RaiseArmComplete);
+      frc::SmartDashboard::PutBoolean("AutoExtendArm", m_autoStates->ExtendArmComplete);
+      frc::SmartDashboard::PutBoolean("AutoLowerWrist", m_autoStates->LowerWristComplete);
+      frc::SmartDashboard::PutBoolean("AutoOpenClaw", m_autoStates->OpenClawComplete);
+      frc::SmartDashboard::PutBoolean("AutoRaiseWrist", m_autoStates->RaiseWristComplete);
+      frc::SmartDashboard::PutBoolean("AutoRetractArm", m_autoStates->RetractArmComplete);
+      frc::SmartDashboard::PutBoolean("AutoBackUp", m_autoStates->BackUpComplete);
+      frc::SmartDashboard::PutBoolean("AutoContinuePlatform", m_autoStates->ContinueOntoPlatformComplete);
+      frc::SmartDashboard::PutBoolean("AutoLevel", m_autoStates->LevelComplete);
+      frc::SmartDashboard::PutBoolean("AutoLowerArm", m_autoStates->LowerArmComplete);
+      frc::SmartDashboard::PutBoolean("AutoBackupStraight", m_autoStates->BackupStraightComplete);
+      frc::SmartDashboard::PutBoolean("AutoAutoFinish", m_autoStates->AutoStateFinish);
     }
 
     void resetEncoders() {
@@ -946,13 +982,16 @@ private:
 
     // Move the robot backwards until we hit the platform and tip up a bit
     void AutoStateBackUp() {
+      if (m_autoStates->BackUpComplete){
+        return;
+      }
       // Make sure the arm stays in and closed while we're lowering
       retractArm();
       closeClaw();
 
       m_autoForward = -0.5;
 
-      m_autoStates->BackUpComplete = std::abs(m_pigeon.GetRoll()) > 10;
+      m_autoStates->BackUpComplete = std::abs(m_gyroLeveller.GetPitch()) > 10;
     }
 
     // Continue onto the platform until it tips back downward
@@ -971,7 +1010,7 @@ private:
       m_wrist.SetGoal(m_wrist.GetGoalWithOffset(0.05));
       //bool armIsDown = m_arm.GetEncoderPosition() <= goal + 0.1; // we don't care if it actually goes down
 
-      double roll = m_pigeon.GetRoll();
+      double roll = m_gyroLeveller.GetPitch();
 
       if (std::abs(roll) > std::abs(m_highestLevel)) {
         m_highestLevel = roll;
@@ -1056,17 +1095,10 @@ private:
 
       m_autoStates->BackupStraight++;
       bool time = m_autoStates->BackupStraight > 215; // This is tick timer, not a good thing to rely on but a backup in case everything else fails
-
-      // Need to move at least 18 feet to get to the center field game pieces
-      // Move only 12 feet?
-      bool position = m_rearRightEncoder.GetPosition() > 10;
-
-      frc::SmartDashboard::PutNumber("StraightBackPosition", position);
-
   
       // todo check if position is greater than certain amount of feet
 
-      m_autoStates->BackupStraightComplete = time || position;
+      m_autoStates->BackupStraightComplete = time;
 
       if (m_autoStates->BackupStraightComplete) {
         // This is a final autonomous state
