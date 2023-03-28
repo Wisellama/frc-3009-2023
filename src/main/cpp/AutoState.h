@@ -4,8 +4,13 @@
 // to simply wait for some amount of time and hope it completes.
 
 
-struct AutoState {
+class AutoState {
+
+    public:
     enum AutoModes { RampBackup, StraightBackup };
+
+    AutoState(){};
+    ~AutoState(){};
 
     AutoModes Mode = StraightBackup; // change to StraightBackup to test other mode
 

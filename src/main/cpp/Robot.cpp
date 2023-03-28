@@ -44,7 +44,7 @@
 #include "GyroAimer.h"
 #include "GyroLeveller.h"
 #include "FeedbackController.h"
-#include "AutonomousState.h"
+#include "AutoState.h"
 
 class Robot : public frc::TimedRobot {
   nt::DoublePublisher accelerationX;
@@ -70,6 +70,8 @@ public:
   void RobotInit() override {
     // An example of sleeping for 5 milliseconds (1000ms = 1 second)
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+    m_autoStates = new AutoState();
 
     // Start Arm-mounted camera connected directly to roborio
     frc::CameraServer::StartAutomaticCapture();
@@ -354,7 +356,10 @@ public:
 
   void AutonomousInit() override {
     // Reset the autonomous states
-    m_autoStates = AutoState{};
+    if (m_autoStates != nullptr) {
+      delete m_autoStates;
+    }
+    m_autoStates = new AutoState();
 
     // Set the Microsoft camera to process AprilTags
     m_cameraAimer.disableDriverVisionMicrosoft();
@@ -469,38 +474,38 @@ public:
     bool runAutonomousSequence = true;
     if (runAutonomousSequence){
       // Place a Cone
-      if (!m_autoStates.RaiseArmComplete) {
+      if (!m_autoStates->RaiseArmComplete) {
         AutoStateRaiseArm();
-      } else if (!m_autoStates.ExtendArmComplete) {
+      } else if (!m_autoStates->ExtendArmComplete) {
         AutoStateExtendArm();
-      } else if (!m_autoStates.LowerWristComplete) {
+      } else if (!m_autoStates->LowerWristComplete) {
         AutoStateLowerWrist();
-      } else if (!m_autoStates.OpenClawComplete) {
+      } else if (!m_autoStates->OpenClawComplete) {
         AutoStateOpenClaw();
-      } else if (!m_autoStates.RaiseWristComplete) {
+      } else if (!m_autoStates->RaiseWristComplete) {
         AutoStateRaiseWrist();
-      } else if (!m_autoStates.RetractArmComplete) {
+      } else if (!m_autoStates->RetractArmComplete) {
         AutoStateRetractArm();
       }
 
       // After placing a Cone, determine which backup mode we're doing
-      if (m_autoStates.RetractArmComplete) {
-        if (m_autoStates.Mode == AutoState::AutoModes::StraightBackup) {
+      if (m_autoStates->RetractArmComplete) {
+        if (m_autoStates->Mode == AutoState::AutoModes::StraightBackup) {
           // Backup and balance on the ramp
-          if (!m_autoStates.BackupStraightComplete) {
+          if (!m_autoStates->BackupStraightComplete) {
             AutoStateBackupStraight();
           }
-        } else if (m_autoStates.Mode == AutoState::AutoModes::RampBackup) {
+        } else if (m_autoStates->Mode == AutoState::AutoModes::RampBackup) {
           // Backup straight to leave the community
-          if (!m_autoStates.BackUpComplete) {
+          if (!m_autoStates->BackUpComplete) {
             AutoStateBackUp();
-          } else if (!m_autoStates.ContinueOntoPlatformComplete) { 
+          } else if (!m_autoStates->ContinueOntoPlatformComplete) { 
             AutoStateContinueOntoPlatform();
           }
         }
       }
 
-      if (m_autoStates.AutoStateFinish) {
+      if (m_autoStates->AutoStateFinish) {
         AutoStateEnd();
       }
     }
@@ -682,7 +687,7 @@ private:
     double m_highestLevel = 0.0;
     int m_autoStartingPosition = -1;
 
-    AutoState m_autoStates{};
+    AutoState* m_autoStates = nullptr;
 
     void publishMotorDebugInfo() {
       for(auto motor : sparkMotors) {
@@ -874,7 +879,7 @@ private:
 
     // Raise the arm up all the way up to the top
     void AutoStateRaiseArm() {
-      if (m_autoStates.RaiseArmComplete) {
+      if (m_autoStates->RaiseArmComplete) {
         return;
       }
 
@@ -884,59 +889,59 @@ private:
       m_wrist.SetGoal(m_wrist.GetGoalWithOffset(0.005));
       
       // Check if it's done
-      m_autoStates.RaiseArmComplete = m_arm.GetEncoderPosition() >= Arm::kEncoderUpperLimit - 0.1;
+      m_autoStates->RaiseArmComplete = m_arm.GetEncoderPosition() >= Arm::kEncoderUpperLimit - 0.1;
     }
 
     // Extend the arm out
     void AutoStateExtendArm() {
-      if (m_autoStates.ExtendArmComplete) {
+      if (m_autoStates->ExtendArmComplete) {
         return;
       }
       extendArm();
-      m_autoStates.ExtendArm++;
-      m_autoStates.ExtendArmComplete = m_autoStates.ExtendArm >= 50;
+      m_autoStates->ExtendArm++;
+      m_autoStates->ExtendArmComplete = m_autoStates->ExtendArm >= 50;
     }
 
     // Rotate the wrist down to level
     void AutoStateLowerWrist() {
-      if (m_autoStates.LowerWristComplete) {
+      if (m_autoStates->LowerWristComplete) {
         return;
       }
       m_wrist.SetGoal(Wrist::kPotLevel);
       double offset = 0.2;
       m_wrist.SetGoal(m_wrist.GetGoalWithOffset(offset));
-      m_autoStates.LowerWristComplete = m_wrist.GetPotPos() >= Wrist::kPotLevel - offset;
+      m_autoStates->LowerWristComplete = m_wrist.GetPotPos() >= Wrist::kPotLevel - offset;
     }
 
     // Open the claw to drop the game piece
     void AutoStateOpenClaw() {
-      if (m_autoStates.OpenClawComplete) {
+      if (m_autoStates->OpenClawComplete) {
         return;
       }
       openClaw();
-      m_autoStates.OpenClaw++;
-      m_autoStates.OpenClawComplete = m_autoStates.OpenClaw >= 80;
+      m_autoStates->OpenClaw++;
+      m_autoStates->OpenClawComplete = m_autoStates->OpenClaw >= 80;
     }
 
      // Rotate the wrist back up
     void AutoStateRaiseWrist() {
-      if (m_autoStates.RaiseWristComplete) {
+      if (m_autoStates->RaiseWristComplete) {
         return;
       }
       m_wrist.SetGoal(Wrist::kPotUpperLimit);
       m_wrist.SetGoal(m_wrist.GetGoalWithOffset(0.005));
-      m_autoStates.RaiseWristComplete = m_wrist.GetPotPos() < Wrist::kPotUpperLimit + 0.1;
+      m_autoStates->RaiseWristComplete = m_wrist.GetPotPos() < Wrist::kPotUpperLimit + 0.1;
     }
 
     // Retract the arm and close the claw
     void AutoStateRetractArm() {
-      if (m_autoStates.RetractArmComplete) {
+      if (m_autoStates->RetractArmComplete) {
         return;
       }
       retractArm();
       closeClaw();
-      m_autoStates.RetractArm++;
-      m_autoStates.RetractArmComplete = m_autoStates.RetractArm >= 80;
+      m_autoStates->RetractArm++;
+      m_autoStates->RetractArmComplete = m_autoStates->RetractArm >= 80;
     }
 
     // Move the robot backwards until we hit the platform and tip up a bit
@@ -947,12 +952,12 @@ private:
 
       m_autoForward = -0.5;
 
-      m_autoStates.BackUpComplete = std::abs(m_pigeon.GetRoll()) > 10;
+      m_autoStates->BackUpComplete = std::abs(m_pigeon.GetRoll()) > 10;
     }
 
     // Continue onto the platform until it tips back downward
     void AutoStateContinueOntoPlatform() {
-      if (m_autoStates.ContinueOntoPlatformComplete) {
+      if (m_autoStates->ContinueOntoPlatformComplete) {
         return;
       }
       retractArm();
@@ -974,8 +979,8 @@ private:
 
       bool robotTipping = std::abs(m_highestLevel) - std::abs(roll) > 5;
 
-      m_autoStates.Bounce++;
-      bool bounce = m_autoStates.Bounce >= 120;
+      m_autoStates->Bounce++;
+      bool bounce = m_autoStates->Bounce >= 120;
 
       // Continue moving backwards
       m_autoForward = -0.4;
@@ -985,16 +990,16 @@ private:
         m_autoForward = -0.2;
       }
 
-      m_autoStates.ContinueOntoPlatformComplete = robotTipping && bounce;
+      m_autoStates->ContinueOntoPlatformComplete = robotTipping && bounce;
 
-      if(m_autoStates.ContinueOntoPlatformComplete){
+      if(m_autoStates->ContinueOntoPlatformComplete){
         // Stop moving forward
         m_autoForward = 0;
         m_autoRotate = 0;
         setParkingBrake();
 
         // This is a final autonomous state
-        m_autoStates.AutoStateFinish = true;
+        m_autoStates->AutoStateFinish = true;
       }
     }
 
@@ -1031,7 +1036,7 @@ private:
 
     // Lower the arm back inside the robot
     void AutoStateLowerArm() {
-      if (m_autoStates.LowerArmComplete) {
+      if (m_autoStates->LowerArmComplete) {
         return;
       }
       // Make sure the arm stays in and closed while we're lowering
@@ -1039,18 +1044,18 @@ private:
       closeClaw();
       double goal = Arm::kEncoderLowerLimit + 0.1;
       m_arm.SetGoal(goal);
-      m_autoStates.LowerArmComplete = m_arm.GetEncoderPosition() <= goal + 0.1;
+      m_autoStates->LowerArmComplete = m_arm.GetEncoderPosition() <= goal + 0.1;
     }
 
     void AutoStateBackupStraight() {
-      if (m_autoStates.BackupStraightComplete) {
+      if (m_autoStates->BackupStraightComplete) {
         return;
       }
 
       m_autoForward = -0.5;
 
-      m_autoStates.BackupStraight++;
-      bool time = m_autoStates.BackupStraight > 215; // This is tick timer, not a good thing to rely on but a backup in case everything else fails
+      m_autoStates->BackupStraight++;
+      bool time = m_autoStates->BackupStraight > 215; // This is tick timer, not a good thing to rely on but a backup in case everything else fails
 
       // Need to move at least 18 feet to get to the center field game pieces
       // Move only 12 feet?
@@ -1061,11 +1066,11 @@ private:
   
       // todo check if position is greater than certain amount of feet
 
-      m_autoStates.BackupStraightComplete = time || position;
+      m_autoStates->BackupStraightComplete = time || position;
 
-      if (m_autoStates.BackupStraightComplete) {
+      if (m_autoStates->BackupStraightComplete) {
         // This is a final autonomous state
-        m_autoStates.AutoStateFinish = true;
+        m_autoStates->AutoStateFinish = true;
       }
     }
 };
